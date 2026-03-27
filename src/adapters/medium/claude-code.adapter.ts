@@ -36,12 +36,11 @@ export class ClaudeCodeAdapter implements MediumPort {
     const startTime = Date.now();
 
     try {
-      // プロンプトは stdin 経由で渡す（ps コマンドでの露出を防止）
       this.activeProcess = execa("claude", args, {
         cwd: request.workingDirectory,
         timeout: request.timeoutMs,
         reject: false,
-        input: request.prompt,
+        stdin: "ignore",
       });
 
       const result = await this.activeProcess;
@@ -66,20 +65,18 @@ export class ClaudeCodeAdapter implements MediumPort {
   }
 
   private buildArgs(request: MediumRequest): string[] {
-    // プロンプトは stdin から読み取るため "-" を指定
-    const args: string[] = ["--print", "--output-format", "json", "-"];
+    const args: string[] = ["--print"];
 
     if (request.systemPrompt) {
       args.push("--system-prompt", request.systemPrompt);
     }
 
-    if (!request.allowEdit) {
-      args.push("--permission-mode", "plan");
-    }
-
     if (request.extraArgs) {
       args.push(...request.extraArgs);
     }
+
+    // プロンプトは直接引数として渡す（stdinだとCLIがハングする場合がある）
+    args.push(request.prompt);
 
     return args;
   }

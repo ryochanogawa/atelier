@@ -12,8 +12,8 @@ export const DEFAULT_TIMEOUT_MS = 300_000;
 /** 1つの Stroke のデフォルト最大リトライ回数 */
 export const DEFAULT_MAX_RETRIES = 3;
 
-/** Commission 内で実行できる Stroke の最大数 */
-export const MAX_STROKES = 50;
+/** Commission 内で実行できる Stroke の最大数（API制限対策のため控えめに設定） */
+export const MAX_STROKES = 5;
 
 /** ログファイルの最大保持数 */
 export const MAX_LOG_FILES = 100;
