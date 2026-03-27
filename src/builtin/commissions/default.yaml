@@ -1,0 +1,74 @@
+name: default
+description: 標準開発フロー（計画 → 実装 → テスト → レビュー）
+
+strokes:
+  - name: plan
+    palette: planner
+    instruction: |
+      プロジェクトの要件を分析し、実装計画を策定してください。
+      以下を含めてください：
+      - 実装するファイルの一覧と各ファイルの責務
+      - 依存関係の整理
+      - 実装の優先順位
+      - 技術的なリスクと対策
+      - 見積もり時間
+    inputs: []
+    outputs:
+      - implementation_plan
+    transitions:
+      - condition: default
+        next: implement
+
+  - name: implement
+    palette: coder
+    instruction: |
+      計画に基づいてコードを実装してください。
+      以下の原則に従ってください：
+      - クリーンコードの原則（可読性、保守性、単一責任）
+      - 適切なエラーハンドリング
+      - 型安全性の確保
+      - 既存コードベースのパターンとの一貫性
+      計画: {{implementation_plan}}
+    inputs:
+      - implementation_plan
+    outputs:
+      - implementation
+    transitions:
+      - condition: default
+        next: test
+
+  - name: test
+    palette: tester
+    instruction: |
+      実装されたコードに対してテストを作成・実行してください。
+      以下を含めてください：
+      - ユニットテスト（正常系・異常系）
+      - エッジケースのテスト
+      - テストカバレッジの確認
+      - テスト結果のサマリー
+      実装内容: {{implementation}}
+    inputs:
+      - implementation
+    outputs:
+      - test_results
+    transitions:
+      - condition: default
+        next: review
+
+  - name: review
+    palette: reviewer
+    instruction: |
+      実装とテスト結果をレビューしてください。
+      以下の観点でレビューしてください：
+      - コード品質（可読性、保守性、パフォーマンス）
+      - セキュリティ上の懸念
+      - テストの十分性
+      - ドキュメントの充実度
+      - 改善提案
+      実装内容: {{implementation}}
+      テスト結果: {{test_results}}
+    inputs:
+      - implementation
+      - test_results
+    outputs:
+      - review_result

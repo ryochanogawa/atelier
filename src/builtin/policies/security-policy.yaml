@@ -1,0 +1,39 @@
+name: security-policy
+description: セキュリティポリシー。安全なコーディングのための規約。
+
+rules:
+  - name: input-validation
+    description: 入力バリデーション
+    content: |
+      - すべてのユーザー入力をバリデーションする
+      - ホワイトリスト方式でバリデーションを行う
+      - SQLクエリにはパラメータ化クエリを使用する
+      - HTMLエスケープを適用する
+      - ファイルパスのトラバーサルを防止する
+
+  - name: authentication
+    description: 認証・認可
+    content: |
+      - パスワードはbcrypt等で安全にハッシュ化する
+      - セッショントークンは暗号学的に安全な方法で生成する
+      - JWTの有効期限を適切に設定する
+      - 最小権限の原則を適用する
+      - 重要な操作には再認証を要求する
+
+  - name: data-protection
+    description: データ保護
+    content: |
+      - 機密データをログに出力しない
+      - APIレスポンスに不要な内部情報を含めない
+      - 認証情報をソースコードにハードコードしない
+      - 環境変数または安全な設定管理を使用する
+      - 転送時はTLS/SSLを使用する
+      - 保存時は適切な暗号化を適用する
+
+  - name: dependency-management
+    description: 依存関係管理
+    content: |
+      - 依存パッケージの脆弱性を定期的にチェックする
+      - lockfile をバージョン管理に含める
+      - 不要な依存パッケージを削除する
+      - 信頼できるソースからのみパッケージをインストールする

@@ -1,0 +1,39 @@
+name: default-policy
+description: 一般的なコーディング規約とベストプラクティス
+
+rules:
+  - name: naming-conventions
+    description: 命名規則
+    content: |
+      - 変数名・関数名はキャメルケース（camelCase）を使用する
+      - クラス名・型名はパスカルケース（PascalCase）を使用する
+      - 定数は大文字スネークケース（UPPER_SNAKE_CASE）を使用する
+      - ファイル名はケバブケース（kebab-case）を使用する
+      - 略語は避け、意味のある名前を使用する
+      - ブール変数は is/has/can/should で始める
+
+  - name: code-structure
+    description: コード構造
+    content: |
+      - 1つのファイルは1つの主要な責務を持つ
+      - 関数は30行以内に収める
+      - ネストは3段階以内に抑える
+      - 早期リターンパターンを活用する
+      - マジックナンバーは定数化する
+
+  - name: error-handling
+    description: エラーハンドリング
+    content: |
+      - エラーは適切な型で throw する
+      - catch 句では具体的なエラー型を処理する
+      - エラーメッセージは原因と対処法を含める
+      - 非同期処理のエラーは必ずハンドリングする
+      - ユーザー向けと開発者向けのエラーメッセージを分離する
+
+  - name: documentation
+    description: ドキュメント
+    content: |
+      - 公開APIにはJSDocコメントを付与する
+      - 複雑なロジックには説明コメントを追加する
+      - TODO/FIXME/HACK コメントには担当者と期限を記載する
+      - READMEにはセットアップ手順と使用例を含める

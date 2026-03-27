@@ -1,0 +1,51 @@
+name: plan-implement-review
+description: 計画・実装・レビューの3ステップワークフロー
+
+strokes:
+  - name: plan
+    palette: architect
+    instruction: |
+      与えられた要件を分析し、実装計画を立ててください。
+      以下を含めてください：
+      - アーキテクチャ設計
+      - ファイル構成
+      - 実装ステップ
+      - リスクと対策
+    inputs: []
+    outputs:
+      - plan
+    transitions:
+      - condition: default
+        next: implement
+
+  - name: implement
+    palette: coder
+    allow_edit: true
+    instruction: |
+      計画に基づいてコードを実装してください。
+      - クリーンコードの原則に従う
+      - 適切なエラーハンドリング
+      - テストコードも作成
+    inputs:
+      - plan
+    outputs:
+      - implementation
+    transitions:
+      - condition: default
+        next: review
+
+  - name: review
+    palette: reviewer
+    instruction: |
+      実装されたコードをレビューしてください。
+      以下の観点でチェックしてください：
+      - コード品質
+      - セキュリティ
+      - パフォーマンス
+      - テストカバレッジ
+      - ベストプラクティスへの準拠
+    inputs:
+      - plan
+      - implementation
+    outputs:
+      - review_result

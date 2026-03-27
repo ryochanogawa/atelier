@@ -1,0 +1,94 @@
+name: review-gate
+description: 自動レビューゲート（セキュリティスキャン → 差分分析 → リスク評価 → ポリシーチェック → 承認判定）
+
+strokes:
+  - name: security-scan
+    palette: security-reviewer
+    instruction: |
+      プロジェクトのセキュリティスキャンを実行してください。
+      以下を実施してください：
+      - npm audit による依存関係の脆弱性チェック
+      - ライセンス適合性チェック
+      - SBOM (Software Bill of Materials) の生成
+      結果をJSON形式でまとめてください。
+    inputs: []
+    outputs:
+      - security_scan_result
+    transitions:
+      - condition: default
+        next: diff-analysis
+
+  - name: diff-analysis
+    palette: risk-assessor
+    instruction: |
+      変更差分を解析し、以下の情報を生成してください：
+      - ファイル変更数、追加行数、削除行数の集計
+      - 変更ファイルのカテゴリ分類（src/test/config/docs/ci）
+      - 各ファイルの変更複雑度スコア
+      セキュリティスキャン結果: {{security_scan_result}}
+    inputs:
+      - security_scan_result
+    outputs:
+      - diff_analysis_result
+    transitions:
+      - condition: default
+        next: risk-evaluation
+
+  - name: risk-evaluation
+    palette: risk-assessor
+    instruction: |
+      差分解析結果をもとに、リスク評価を実施してください。
+      以下を評価してください：
+      - 0-100のリスクスコア算出
+      - リスクファクターの特定（高リスクファイル変更、テスト不足、セキュリティ関連変更等）
+      - リスクレベルの判定（low/medium/high/critical）
+      - 影響を受けるコンポーネントの特定
+      差分解析結果: {{diff_analysis_result}}
+    inputs:
+      - diff_analysis_result
+    outputs:
+      - risk_assessment_result
+    transitions:
+      - condition: default
+        next: policy-check
+
+  - name: policy-check
+    palette: policy-checker
+    instruction: |
+      ポリシー適合性チェックを実施してください。
+      以下のポリシールールを評価してください：
+      - リスクスコアが閾値以下であること
+      - Linterエラーがないこと
+      - 変更ファイル数が制限内であること
+      - ソース変更にテストが伴っていること
+      - セキュリティ関連ファイルが含まれていないこと
+      リスク評価結果: {{risk_assessment_result}}
+      セキュリティスキャン結果: {{security_scan_result}}
+    inputs:
+      - risk_assessment_result
+      - security_scan_result
+    outputs:
+      - policy_evaluation_result
+    transitions:
+      - condition: default
+        next: approval-decision
+
+  - name: approval-decision
+    palette: reviewer
+    instruction: |
+      これまでの評価結果を総合し、最終的な承認判定を行ってください。
+      以下を出力してください：
+      - 承認/却下の判定
+      - 自動承認可能かどうか
+      - 必要な承認者一覧
+      - 判定理由の要約
+      - 改善が必要な場合の推奨事項
+      ポリシー評価結果: {{policy_evaluation_result}}
+      リスク評価結果: {{risk_assessment_result}}
+      セキュリティスキャン結果: {{security_scan_result}}
+    inputs:
+      - policy_evaluation_result
+      - risk_assessment_result
+      - security_scan_result
+    outputs:
+      - approval_result

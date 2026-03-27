@@ -1,0 +1,96 @@
+name: test-enhancement
+description: テスト品質向上フロー（カバレッジ分析 → ギャップ特定 → テスト生成 → 検証）
+
+strokes:
+  - name: analyze-coverage
+    palette: tester
+    instruction: |
+      プロジェクトのテストカバレッジを分析してください。
+      以下を実施してください：
+
+      1. 既存のカバレッジレポートを確認
+      2. ファイル別のカバレッジ率を算出
+      3. カバレッジの低いファイルを特定
+      4. カバレッジの全体サマリーを作成
+
+      分析結果には以下を含めてください：
+      - 行カバレッジ率
+      - ブランチカバレッジ率
+      - 関数カバレッジ率
+      - カバレッジの低いファイルトップ10
+    inputs: []
+    outputs:
+      - coverage_report
+    transitions:
+      - condition: default
+        next: identify-gaps
+
+  - name: identify-gaps
+    palette: tester
+    instruction: |
+      カバレッジ分析結果からテストのギャップを特定してください。
+      以下を特定してください：
+
+      1. テストされていない関数・メソッド
+      2. カバーされていないブランチ（条件分岐）
+      3. エッジケースが不足しているテスト
+      4. 結合テスト・E2Eテストの不足箇所
+
+      各ギャップに優先度（高/中/低）を付けてください。
+      優先度の基準：
+      - 高: ビジネスクリティカルな機能、セキュリティ関連
+      - 中: 主要機能のブランチカバレッジ不足
+      - 低: ユーティリティ関数、設定値
+
+      カバレッジレポート: {{coverage_report}}
+    inputs:
+      - coverage_report
+    outputs:
+      - coverage_gaps
+    transitions:
+      - condition: default
+        next: generate-tests
+
+  - name: generate-tests
+    palette: tester
+    instruction: |
+      特定されたギャップに基づいてテストコードを生成してください。
+      以下の原則に従ってください：
+
+      - AAA パターン（Arrange, Act, Assert）
+      - テスト名は何をテストしているか明確に
+      - 各テストは独立して実行可能
+      - モック・スタブは最小限
+      - 正常系・異常系・境界値を網羅
+
+      テストフレームワークはプロジェクトの既存設定に合わせてください。
+
+      ギャップ一覧: {{coverage_gaps}}
+    inputs:
+      - coverage_gaps
+    outputs:
+      - generated_tests
+    transitions:
+      - condition: default
+        next: verify
+
+  - name: verify
+    palette: tester
+    instruction: |
+      生成されたテストを検証してください。
+      以下を確認してください：
+
+      1. テストが正しくコンパイルされること
+      2. テストが正常に実行されること
+      3. カバレッジが改善されていること
+      4. テストが意味のある検証を行っていること（false positive がないか）
+      5. テストの保守性（脆いテストになっていないか）
+
+      問題があれば修正してください。
+      最終的なテスト結果サマリーを作成してください。
+
+      生成テスト: {{generated_tests}}
+    inputs:
+      - generated_tests
+    outputs:
+      - verification_report

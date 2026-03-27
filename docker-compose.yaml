@@ -1,0 +1,42 @@
+services:
+  atelier:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: atelier-cli
+    volumes:
+      # Mount the target project for agent operations
+      - ./workspace:/workspace
+      # Mount atelier config
+      - ./.atelier:/app/.atelier
+      # Mount host CLI configs for subscription-based auth
+      - ~/.claude:/root/.claude:ro
+      - ~/.config:/root/.config:ro
+    working_dir: /workspace
+    environment:
+      - ATELIER_LOG_LEVEL=info
+      - ATELIER_MEDIUM_DEFAULT=claude-code
+    stdin_open: true
+    tty: true
+
+  # Development container with hot-reload
+  atelier-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: base
+    container_name: atelier-dev
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - ./workspace:/workspace
+      - ~/.claude:/root/.claude:ro
+      - ~/.config:/root/.config:ro
+    working_dir: /app
+    command: pnpm dev -- --help
+    environment:
+      - NODE_ENV=development
+      - ATELIER_LOG_LEVEL=debug
+    stdin_open: true
+    tty: true

@@ -1,0 +1,95 @@
+name: requirements-analysis
+description: 対話的要件分析フロー（ヒアリング → 構造化 → 検証 → 確定）
+
+strokes:
+  - name: interview
+    palette: interviewer
+    instruction: |
+      ユーザーに対して質問形式で要件をヒアリングしてください。
+      以下の観点で深掘りしてください：
+      - プロジェクトの目的とゴール
+      - 対象ユーザーとユースケース
+      - 機能要件（何ができるべきか）
+      - 非機能要件（性能、セキュリティ、可用性）
+      - 制約条件（技術スタック、予算、期限）
+      - 既存システムとの連携
+      - 優先順位（MoSCoW法: Must/Should/Could/Won't）
+
+      質問は段階的に行い、回答に応じて深掘りしてください。
+    inputs: []
+    outputs:
+      - interview_notes
+    transitions:
+      - condition: default
+        next: structure
+
+  - name: structure
+    palette: requirements-analyst
+    instruction: |
+      ヒアリング結果を構造化された要件ドキュメントに整理してください。
+      以下の構造で出力してください：
+
+      1. プロジェクト概要
+      2. 機能要件一覧（ID、説明、優先度、受け入れ基準）
+      3. 非機能要件一覧（カテゴリ別）
+      4. 前提条件
+      5. 制約事項
+      6. 未確定事項・オープンクエスチョン
+
+      各要件にはMoSCoW法で優先度を付与してください。
+      ヒアリングノート: {{interview_notes}}
+    inputs:
+      - interview_notes
+    outputs:
+      - structured_requirements
+    transitions:
+      - condition: default
+        next: validate
+
+  - name: validate
+    palette: requirements-analyst
+    instruction: |
+      構造化された要件を検証してください。
+      以下の観点でチェックしてください：
+
+      1. 矛盾検出 - 相互に矛盾する要件がないか
+      2. 抜け漏れ検出 - 以下の観点が網羅されているか
+         - エラーハンドリング
+         - セキュリティ
+         - パフォーマンス
+         - スケーラビリティ
+         - 監視・運用
+         - データ管理
+         - ユーザビリティ
+         - テスト戦略
+      3. 実現可能性 - 技術的に実現可能か
+      4. 曖昧さ - 解釈の余地がある記述はないか
+
+      問題点と改善提案を一覧化してください。
+      要件ドキュメント: {{structured_requirements}}
+    inputs:
+      - structured_requirements
+    outputs:
+      - validation_report
+    transitions:
+      - condition: default
+        next: finalize
+
+  - name: finalize
+    palette: requirements-analyst
+    instruction: |
+      検証結果を反映し、最終的な要件ドキュメントを生成してください。
+      以下を含めてください：
+
+      1. 最終要件一覧（矛盾解消済み、抜け漏れ補完済み）
+      2. トレーサビリティマトリクス（要件 → 設計 → 実装 → テスト）
+      3. 確認チェックリスト
+      4. 次のアクション一覧
+
+      要件ドキュメント: {{structured_requirements}}
+      検証レポート: {{validation_report}}
+    inputs:
+      - structured_requirements
+      - validation_report
+    outputs:
+      - final_requirements

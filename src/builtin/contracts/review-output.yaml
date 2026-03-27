@@ -1,0 +1,47 @@
+name: review-output
+description: レビュー出力形式の契約。レビュー結果の構造化された出力形式を定義する。
+
+format: |
+  ## レビュー結果
+
+  ### サマリー
+  - 全体評価: [Approved / Changes Requested / Needs Discussion]
+  - レビュー対象ファイル数: N
+  - 指摘事項数: Critical: N / Major: N / Minor: N / Suggestion: N
+
+  ### 指摘事項
+
+  #### [Critical/Major/Minor/Suggestion] - タイトル
+  - ファイル: `path/to/file.ts`
+  - 行: L10-L20
+  - 説明: 問題の説明
+  - 改善案:
+    ```
+    改善後のコード例
+    ```
+
+  ### 良い点
+  - 良かった実装や設計についてのコメント
+
+  ### 次のアクション
+  - 修正が必要な項目のチェックリスト
+
+fields:
+  - name: verdict
+    type: enum
+    values: [approved, changes_requested, needs_discussion]
+    required: true
+
+  - name: findings
+    type: array
+    items:
+      severity: enum[critical, major, minor, suggestion]
+      file: string
+      line: string
+      description: string
+      suggestion: string
+    required: true
+
+  - name: summary
+    type: string
+    required: true

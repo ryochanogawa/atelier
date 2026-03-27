@@ -1,0 +1,71 @@
+name: parallel-review
+description: 実装後に複数レビューを並列実行
+
+strokes:
+  - name: implement
+    palette: coder
+    allow_edit: true
+    instruction: |
+      コードを実装してください。
+      - クリーンコードの原則に従う
+      - 適切なエラーハンドリング
+      - テストコードも作成
+    inputs: []
+    outputs:
+      - implementation
+    transitions:
+      - condition: default
+        next: code-review
+
+  - name: code-review
+    palette: reviewer
+    allow_edit: false
+    depends_on: [implement]
+    instruction: |
+      コード品質をレビューしてください。
+      以下の観点でチェック：
+      - コーディング規約への準拠
+      - 可読性・保守性
+      - テストカバレッジ
+      - パフォーマンス
+    inputs:
+      - implementation
+    outputs:
+      - code_review_result
+
+  - name: security-review
+    palette: security-reviewer
+    allow_edit: false
+    depends_on: [implement]
+    instruction: |
+      セキュリティ観点でレビューしてください。
+      以下の観点でチェック：
+      - インジェクション脆弱性
+      - 認証・認可の適切性
+      - データバリデーション
+      - 機密情報の取り扱い
+    inputs:
+      - implementation
+    outputs:
+      - security_review_result
+
+  - name: merge-reviews
+    palette: architect
+    allow_edit: false
+    depends_on: [code-review, security-review]
+    instruction: |
+      レビュー結果を統合して最終判定してください。
+      - コードレビューとセキュリティレビューの結果を総合的に評価
+      - 承認(approved)または修正要求(needs_fix)を判定
+      - 判定結果を verdict キーに設定
+    inputs:
+      - implementation
+      - code_review_result
+      - security_review_result
+    outputs:
+      - final_verdict
+    transitions:
+      - condition: verdict == approved
+        next: COMPLETE
+      - condition: verdict == needs_fix
+        next: implement

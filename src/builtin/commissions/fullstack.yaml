@@ -1,0 +1,107 @@
+name: fullstack
+description: フルスタックフロー（計画 → バックエンド → フロントエンド → 結合テスト → レビュー）
+
+strokes:
+  - name: plan
+    palette: planner
+    instruction: |
+      フルスタックアプリケーションの設計を行ってください。
+      以下を含めてください：
+      - システム全体のアーキテクチャ
+      - API設計（エンドポイント、リクエスト/レスポンス形式）
+      - データモデル設計
+      - フロントエンドのコンポーネント構成
+      - 状態管理の方針
+      - 認証フローの設計
+      - デプロイ戦略
+    inputs: []
+    outputs:
+      - fullstack_plan
+    transitions:
+      - condition: default
+        next: backend
+
+  - name: backend
+    palette: coder
+    instruction: |
+      設計に基づいてバックエンドを実装してください。
+      以下に注意してください：
+      - API エンドポイントの実装
+      - データベース操作の実装
+      - 認証・認可ミドルウェア
+      - バリデーション
+      - エラーハンドリング
+      - APIドキュメント（OpenAPI/Swagger）
+      設計: {{fullstack_plan}}
+    inputs:
+      - fullstack_plan
+    outputs:
+      - backend_implementation
+    transitions:
+      - condition: default
+        next: frontend
+
+  - name: frontend
+    palette: coder
+    instruction: |
+      設計とバックエンドAPIに基づいてフロントエンドを実装してください。
+      以下に注意してください：
+      - APIクライアントの実装
+      - コンポーネントの実装
+      - 状態管理の実装
+      - ルーティング
+      - フォームバリデーション
+      - エラー表示とローディング状態の管理
+      設計: {{fullstack_plan}}
+      バックエンド実装: {{backend_implementation}}
+    inputs:
+      - fullstack_plan
+      - backend_implementation
+    outputs:
+      - frontend_implementation
+    transitions:
+      - condition: default
+        next: integration-test
+
+  - name: integration-test
+    palette: tester
+    instruction: |
+      フロントエンドとバックエンドの結合テストを作成・実行してください。
+      以下を含めてください：
+      - E2Eテスト（ユーザーフロー全体の検証）
+      - API結合テスト
+      - 認証フローのテスト
+      - エラーハンドリングの検証
+      - パフォーマンステスト
+      バックエンド: {{backend_implementation}}
+      フロントエンド: {{frontend_implementation}}
+    inputs:
+      - backend_implementation
+      - frontend_implementation
+    outputs:
+      - integration_test_results
+    transitions:
+      - condition: default
+        next: review
+
+  - name: review
+    palette: reviewer
+    instruction: |
+      フルスタックアプリケーション全体をレビューしてください。
+      以下の観点でレビューしてください：
+      - アーキテクチャの妥当性
+      - フロントエンド・バックエンド間のAPI整合性
+      - セキュリティ（認証、入力検証、CORS設定）
+      - パフォーマンス（クエリ最適化、キャッシュ戦略）
+      - コード品質と保守性
+      - テストカバレッジ
+      - デプロイメント準備状況
+      バックエンド: {{backend_implementation}}
+      フロントエンド: {{frontend_implementation}}
+      テスト結果: {{integration_test_results}}
+    inputs:
+      - backend_implementation
+      - frontend_implementation
+      - integration_test_results
+    outputs:
+      - review_result

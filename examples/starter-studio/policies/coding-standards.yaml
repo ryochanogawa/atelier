@@ -1,0 +1,39 @@
+name: coding-standards
+description: コーディング規約
+
+rules:
+  - name: naming-conventions
+    description: 命名規則
+    severity: warning
+    instruction: |
+      以下の命名規則に従ってください：
+      - 変数・関数: camelCase
+      - クラス・型: PascalCase
+      - 定数: UPPER_SNAKE_CASE
+      - ファイル: kebab-case
+      - 意味のある名前を使用する
+
+  - name: function-length
+    description: 関数の長さ制限
+    severity: warning
+    instruction: |
+      1つの関数は50行以内を目安にしてください。
+      長くなる場合は適切にリファクタリングしてください。
+
+  - name: error-handling
+    description: エラーハンドリング
+    severity: error
+    instruction: |
+      - try-catch で適切にエラーを処理する
+      - エラーを握りつぶさない
+      - 適切なエラーメッセージを提供する
+      - カスタムエラークラスを活用する
+
+  - name: type-safety
+    description: 型安全性
+    severity: warning
+    instruction: |
+      - any 型の使用を最小限にする
+      - 適切な型定義を行う
+      - 型アサーション(as)の使用を最小限にする
+      - unknown を使用してから型ガードで絞り込む

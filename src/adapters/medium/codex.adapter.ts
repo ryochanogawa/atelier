@@ -1,0 +1,94 @@
+/**
+ * OpenAI Codex CLI アダプター
+ * `codex --quiet --approval-mode` を使用してCodexを呼び出す。
+ * プロンプトは stdin 経由で渡し、プロセス引数への露出を防止する。
+ */
+
+import { execa, type ResultPromise } from "execa";
+import type {
+  MediumPort,
+  MediumAvailability,
+  MediumRequest,
+  MediumResponse,
+} from "./types.js";
+
+export class CodexAdapter implements MediumPort {
+  readonly name = "codex";
+
+  private activeProcess: ResultPromise | null = null;
+
+  async checkAvailability(): Promise<MediumAvailability> {
+    try {
+      const result = await execa("codex", ["--version"], { timeout: 10_000 });
+      const version = result.stdout.trim();
+      return { available: true, version };
+    } catch (error) {
+      return {
+        available: false,
+        reason:
+          error instanceof Error ? error.message : "codex command not found",
+      };
+    }
+  }
+
+  async execute(request: MediumRequest): Promise<MediumResponse> {
+    const args = this.buildArgs(request);
+    const startTime = Date.now();
+
+    try {
+      // プロンプトは stdin 経由で渡す（ps コマンドでの露出を防止）
+      this.activeProcess = execa("codex", args, {
+        cwd: request.workingDirectory,
+        timeout: request.timeoutMs,
+        reject: false,
+        input: request.prompt,
+      });
+
+      const result = await this.activeProcess;
+      const durationMs = Date.now() - startTime;
+
+      return this.parseResponse(
+        String(result.stdout ?? ""),
+        String(result.stderr ?? ""),
+        result.exitCode ?? 0,
+        durationMs,
+      );
+    } finally {
+      this.activeProcess = null;
+    }
+  }
+
+  async abort(): Promise<void> {
+    if (this.activeProcess) {
+      this.activeProcess.kill("SIGTERM");
+      this.activeProcess = null;
+    }
+  }
+
+  private buildArgs(request: MediumRequest): string[] {
+    const approvalMode = request.allowEdit ? "auto-edit" : "suggest";
+    const args: string[] = ["--quiet", "--approval-mode", approvalMode];
+
+    if (request.extraArgs) {
+      args.push(...request.extraArgs);
+    }
+
+    // プロンプトは stdin から読み取る
+    return args;
+  }
+
+  private parseResponse(
+    stdout: string,
+    stderr: string,
+    exitCode: number,
+    durationMs: number,
+  ): MediumResponse {
+    return {
+      content: stdout.trim(),
+      durationMs,
+      exitCode,
+      rawStdout: stdout,
+      rawStderr: stderr,
+    };
+  }
+}

@@ -1,0 +1,51 @@
+name: structured-review
+description: 構造化レビュー結果の契約
+
+output_schema:
+  type: object
+  required:
+    - verdict
+    - summary
+    - issues
+  properties:
+    verdict:
+      type: string
+      enum:
+        - approved
+        - needs_fix
+        - rejected
+      description: レビュー判定結果
+
+    summary:
+      type: string
+      description: レビューの概要（1-3文）
+
+    issues:
+      type: array
+      items:
+        type: object
+        required:
+          - severity
+          - message
+        properties:
+          severity:
+            type: string
+            enum:
+              - error
+              - warning
+              - info
+          message:
+            type: string
+            description: 問題の説明
+          location:
+            type: string
+            description: 問題の箇所（ファイル名:行番号）
+          suggestion:
+            type: string
+            description: 修正提案
+
+    score:
+      type: number
+      minimum: 0
+      maximum: 100
+      description: コード品質スコア（0-100）

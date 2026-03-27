@@ -1,0 +1,74 @@
+name: doc-refresh
+description: ドキュメント更新フロー（陳腐化検出 → 優先度付け → 更新/生成 → 整合性検証）
+
+strokes:
+  - name: audit
+    palette: technical-writer
+    instruction: |
+      プロジェクト内のドキュメントの鮮度を監査してください。
+      以下を含めてください：
+      - 全ドキュメントファイルの一覧と最終更新日
+      - 対応するソースコードとの更新日差分
+      - 鮮度ステータス（fresh/aging/stale/obsolete）の分類
+      - 陳腐化が疑われるドキュメントのハイライト
+    inputs: []
+    outputs:
+      - doc_audit_result
+    transitions:
+      - condition: default
+        next: prioritize
+
+  - name: prioritize
+    palette: technical-writer
+    instruction: |
+      監査結果に基づいてドキュメント更新の優先度を付けてください。
+      以下を含めてください：
+      - 更新が必要なドキュメントの優先度ランキング
+      - 各ドキュメントの更新理由
+      - 新規作成が必要なドキュメントの提案
+      - 削除を検討すべきドキュメント
+      監査結果: {{doc_audit_result}}
+    inputs:
+      - doc_audit_result
+    outputs:
+      - update_priorities
+    transitions:
+      - condition: default
+        next: update
+
+  - name: update
+    palette: technical-writer
+    allow_edit: true
+    instruction: |
+      優先度に基づいてドキュメントを更新・生成してください。
+      以下を含めてください：
+      - 陳腐化したドキュメントの内容更新
+      - ソースコードに基づくAPIドキュメントの生成
+      - 不足しているドキュメントの新規作成
+      - 変更内容のサマリー
+      監査結果: {{doc_audit_result}}
+      更新優先度: {{update_priorities}}
+    inputs:
+      - doc_audit_result
+      - update_priorities
+    outputs:
+      - updated_docs
+    transitions:
+      - condition: default
+        next: verify
+
+  - name: verify
+    palette: technical-writer
+    instruction: |
+      更新されたドキュメントの整合性を検証してください。
+      以下を含めてください：
+      - ソースコードとの整合性チェック
+      - リンク切れの検出
+      - 用語の一貫性チェック
+      - フォーマットの統一性チェック
+      - 最終的な品質評価
+      更新されたドキュメント: {{updated_docs}}
+    inputs:
+      - updated_docs
+    outputs:
+      - verification_result

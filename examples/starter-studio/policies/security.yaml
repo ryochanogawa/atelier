@@ -1,0 +1,27 @@
+name: security
+description: セキュリティポリシー
+
+rules:
+  - name: no-hardcoded-secrets
+    description: ハードコードされた秘密情報を禁止
+    severity: error
+    instruction: |
+      APIキー、パスワード、トークンなどの秘密情報を
+      ソースコードにハードコードしないでください。
+      環境変数または設定ファイル（.gitignore対象）を使用してください。
+
+  - name: input-validation
+    description: 入力値の検証を必須化
+    severity: warning
+    instruction: |
+      外部からの入力値は必ずバリデーションしてください。
+      SQLインジェクション、XSS、パストラバーサルなどの
+      攻撃を防ぐため、適切なサニタイズ処理を行ってください。
+
+  - name: dependency-audit
+    description: 依存パッケージの脆弱性確認
+    severity: warning
+    instruction: |
+      外部パッケージを追加する際は、
+      既知の脆弱性がないか確認してください。
+      npm audit / yarn audit を活用してください。

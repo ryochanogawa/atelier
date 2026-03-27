@@ -1,0 +1,57 @@
+name: frontend
+description: フロントエンド特化フロー（デザイン → 実装 → ビジュアルレビュー）
+
+strokes:
+  - name: design
+    palette: designer
+    instruction: |
+      UI/UXの設計を行ってください。
+      以下を含めてください：
+      - コンポーネント構成の設計
+      - 状態管理の方針
+      - レスポンシブデザインの考慮
+      - アクセシビリティ（WCAG 2.1 AA準拠）の計画
+      - ユーザーインタラクションフローの定義
+    inputs: []
+    outputs:
+      - design_spec
+    transitions:
+      - condition: default
+        next: implement
+
+  - name: implement
+    palette: coder
+    instruction: |
+      デザイン仕様に基づいてフロントエンドを実装してください。
+      以下に注意してください：
+      - コンポーネントの再利用性
+      - パフォーマンス最適化（遅延ロード、メモ化など）
+      - セマンティックHTML
+      - CSSの管理方針に従ったスタイリング
+      - ブラウザ互換性
+      デザイン仕様: {{design_spec}}
+    inputs:
+      - design_spec
+    outputs:
+      - implementation
+    transitions:
+      - condition: default
+        next: visual-review
+
+  - name: visual-review
+    palette: reviewer
+    instruction: |
+      フロントエンド実装をレビューしてください。
+      以下の観点を重視してください：
+      - デザイン仕様との整合性
+      - レスポンシブ対応の確認
+      - アクセシビリティの検証（aria属性、キーボード操作、スクリーンリーダー対応）
+      - パフォーマンス（バンドルサイズ、レンダリング効率）
+      - クロスブラウザ互換性
+      デザイン仕様: {{design_spec}}
+      実装内容: {{implementation}}
+    inputs:
+      - design_spec
+      - implementation
+    outputs:
+      - review_result

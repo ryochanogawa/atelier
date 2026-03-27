@@ -1,0 +1,81 @@
+name: backend
+description: バックエンド特化フロー（計画 → 実装 → APIテスト → セキュリティレビュー）
+
+strokes:
+  - name: plan
+    palette: planner
+    instruction: |
+      バックエンドの設計を行ってください。
+      以下を含めてください：
+      - API エンドポイントの設計（RESTful / GraphQL）
+      - データモデル・スキーマ設計
+      - 認証・認可の方針
+      - エラーハンドリング戦略
+      - スケーラビリティの考慮
+      - データベースマイグレーション計画
+    inputs: []
+    outputs:
+      - backend_plan
+    transitions:
+      - condition: default
+        next: implement
+
+  - name: implement
+    palette: coder
+    instruction: |
+      設計に基づいてバックエンドを実装してください。
+      以下に注意してください：
+      - レイヤードアーキテクチャの遵守
+      - 入力バリデーションの徹底
+      - 適切なHTTPステータスコードの使用
+      - データベーストランザクションの適切な管理
+      - ログ出力の整備
+      - 環境変数による設定の外部化
+      設計: {{backend_plan}}
+    inputs:
+      - backend_plan
+    outputs:
+      - implementation
+    transitions:
+      - condition: default
+        next: api-test
+
+  - name: api-test
+    palette: tester
+    instruction: |
+      実装されたAPIに対してテストを作成・実行してください。
+      以下を含めてください：
+      - 各エンドポイントの正常系テスト
+      - バリデーションエラーのテスト
+      - 認証・認可のテスト
+      - エッジケース（大量データ、同時リクエスト等）
+      - レスポンス形式の検証
+      - パフォーマンステスト（応答時間の計測）
+      実装内容: {{implementation}}
+    inputs:
+      - implementation
+    outputs:
+      - test_results
+    transitions:
+      - condition: default
+        next: security-review
+
+  - name: security-review
+    palette: security-reviewer
+    instruction: |
+      バックエンド実装のセキュリティレビューを行ってください。
+      以下の観点でチェックしてください：
+      - OWASP Top 10 への対策状況
+      - SQLインジェクション対策
+      - XSS/CSRF対策
+      - 認証・認可の実装の妥当性
+      - 機密データの取り扱い（暗号化、マスキング）
+      - 依存パッケージの脆弱性
+      - レート制限の実装
+      実装内容: {{implementation}}
+      テスト結果: {{test_results}}
+    inputs:
+      - implementation
+      - test_results
+    outputs:
+      - security_review_result

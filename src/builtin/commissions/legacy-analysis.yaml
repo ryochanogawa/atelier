@@ -1,0 +1,80 @@
+name: legacy-analysis
+description: レガシーコード分析フロー（構造分析 → 技術負債評価 → マイグレーション計画 → ドキュメント生成）
+
+strokes:
+  - name: scan
+    palette: legacy-analyst
+    instruction: |
+      対象コードベースの構造を分析してください。
+      以下を含めてください：
+      - ファイル構成と拡張子ごとの分布
+      - 使用されている技術スタック
+      - エントリポイントの特定
+      - 設定ファイルの一覧
+      - ディレクトリ構造の概要
+    inputs: []
+    outputs:
+      - codebase_structure
+    transitions:
+      - condition: default
+        next: assess
+
+  - name: assess
+    palette: legacy-analyst
+    instruction: |
+      コードベース構造に基づいて技術負債を評価してください。
+      以下を含めてください：
+      - 依存関係の健全性（古い/脆弱な依存）
+      - コード複雑度の高いファイル
+      - TODO/FIXME/HACK コメントの集約
+      - テストカバレッジの推定
+      - 技術負債のリスクランキング
+      構造分析結果: {{codebase_structure}}
+    inputs:
+      - codebase_structure
+    outputs:
+      - debt_assessment
+    transitions:
+      - condition: default
+        next: plan
+
+  - name: plan
+    palette: legacy-analyst
+    instruction: |
+      技術負債評価に基づいてマイグレーション計画を策定してください。
+      以下を含めてください：
+      - フェーズ分けされた移行計画
+      - 各フェーズのタスクと依存関係
+      - リスク評価と緩和策
+      - 推定工数と優先順位
+      - ロールバック戦略
+      構造分析結果: {{codebase_structure}}
+      負債評価結果: {{debt_assessment}}
+    inputs:
+      - codebase_structure
+      - debt_assessment
+    outputs:
+      - migration_plan
+    transitions:
+      - condition: default
+        next: document
+
+  - name: document
+    palette: legacy-analyst
+    instruction: |
+      分析結果をまとめたドキュメントを生成してください。
+      以下を含めてください：
+      - エグゼクティブサマリー
+      - 現状分析レポート
+      - 技術負債レポート
+      - マイグレーション計画書
+      - リスク一覧と対策
+      構造分析結果: {{codebase_structure}}
+      負債評価結果: {{debt_assessment}}
+      移行計画: {{migration_plan}}
+    inputs:
+      - codebase_structure
+      - debt_assessment
+      - migration_plan
+    outputs:
+      - analysis_document

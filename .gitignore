@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment & secrets
+.env
+.env.*
+*.pem
+*.key
+
+# ATELIER runtime data
+.atelier/logs/
+.atelier/studios/
+.atelier/repertoire/
+.atelier/tasks.yaml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Coverage & test output
+coverage/
+*.lcov
+
+# Temporary files
+tmp/
+*.tmp

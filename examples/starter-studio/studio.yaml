@@ -1,0 +1,14 @@
+studio:
+  default_medium: claude-code
+  language: ja
+  log_level: info
+
+media:
+  claude-code:
+    command: claude
+    args: ["--print", "--output-format", "json"]
+  codex:
+    command: codex
+    args: ["--quiet"]
+  gemini:
+    command: gemini
