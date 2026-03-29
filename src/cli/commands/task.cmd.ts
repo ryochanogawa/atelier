@@ -20,6 +20,7 @@ import type { MediumRegistry } from "../../application/services/commission-runne
 import type { StudioConfig, MediumConfig } from "../../shared/types.js";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
+import { simpleGit } from "simple-git";
 import { readTextFile } from "../../infrastructure/fs/file-system.js";
 import { resolveAtelierPath } from "../../shared/utils.js";
 import { STUDIO_CONFIG_FILE } from "../../shared/constants.js";
@@ -66,15 +67,45 @@ function createConfigPort(): ConfigPort {
 }
 
 /**
- * 簡易 VcsPort 実装
+ * Git worktree ベースの VcsPort 実装。
  */
 function createVcsPort(): VcsPort {
   return {
-    async createWorktree(_basePath: string, _branchName: string): Promise<string> {
-      return _basePath;
+    async createWorktree(basePath: string, branchName: string): Promise<string> {
+      const git = simpleGit(basePath);
+      const isRepo = await git.checkIsRepo().catch(() => false);
+      if (!isRepo) return basePath;
+
+      const currentBranch = (await git.revparse(["--abbrev-ref", "HEAD"])).trim();
+      const branches = await git.branchLocal();
+      if (!branches.all.includes(branchName)) {
+        await git.checkoutLocalBranch(branchName);
+        await git.checkout(currentBranch);
+      }
+
+      const safeName = branchName.replace(/\//g, "-");
+      const worktreePath = path.join(basePath, ".atelier", "worktrees", safeName);
+
+      try {
+        const worktreeList = await git.raw(["worktree", "list", "--porcelain"]);
+        if (worktreeList.includes(worktreePath)) return worktreePath;
+      } catch { /* ignore */ }
+
+      await git.raw(["worktree", "add", worktreePath, branchName]);
+      return worktreePath;
     },
-    async removeWorktree(_worktreePath: string): Promise<void> {},
-    async commitAll(_cwd: string, _message: string): Promise<void> {},
+    async removeWorktree(_worktreePath: string): Promise<void> {
+      // worktree を保持する（ユーザーが branch merge/delete で管理）
+    },
+    async commitAll(cwd: string, message: string): Promise<void> {
+      const git = simpleGit(cwd);
+      const isRepo = await git.checkIsRepo().catch(() => false);
+      if (!isRepo) return;
+      const status = await git.status();
+      if (status.files.length === 0) return;
+      await git.add("-A");
+      await git.commit(message);
+    },
   };
 }
 
@@ -186,6 +217,9 @@ export function createTaskCommand(): Command {
     .command("run")
     .description("キュー内のタスクを一括実行する")
     .option("--concurrency <number>", "最大並列実行数", "1")
+    .option("--auto-pr", "実行完了後に自動で PR を作成する", false)
+    .option("--draft", "PR をドラフトとして作成する", false)
+    .option("--base <branch>", "PR のベースブランチ", "main")
     .action(async (opts) => {
       const projectPath = process.cwd();
       const concurrency = Math.max(1, parseInt(opts.concurrency, 10) || 1);
@@ -236,6 +270,56 @@ export function createTaskCommand(): Command {
             ["タスク", "状態", "ブランチ", "エラー"],
             rows,
           );
+        }
+
+        // --auto-pr: 成功したタスクの PR を自動作成
+        if (opts.autoPr && result.details.length > 0) {
+          const { createPRAdapter } = await import("../../adapters/vcs/create-pr-adapter.js");
+          const { CreatePRUseCase } = await import("../../application/use-cases/create-pr.use-case.js");
+
+          const prAdapter = await createPRAdapter(projectPath);
+          const prUseCase = new CreatePRUseCase(prAdapter, createLoggerPort());
+
+          const successDetails = result.details.filter((d: TaskRunDetail) => d.success && d.branch);
+          if (successDetails.length > 0) {
+            printInfo(`\n${successDetails.length} 件の PR を作成中...`);
+          }
+
+          for (const detail of successDetails) {
+            const prSpinner = ora(`PR 作成: ${detail.task.description.substring(0, 40)}...`).start();
+            try {
+              const pr = await prUseCase.execute(
+                {
+                  runId: detail.branch!.replace("atelier/", "run_"),
+                  commissionName: detail.task.commission ?? "default",
+                  status: "completed",
+                  strokesExecuted: 1,
+                  strokesTotal: 1,
+                  duration: 0,
+                  startedAt: new Date().toISOString(),
+                  completedAt: new Date().toISOString(),
+                  errors: [],
+                },
+                {
+                  base: opts.base ?? "main",
+                  head: detail.branch!,
+                  draft: opts.draft,
+                  taskDescription: detail.task.description,
+                },
+              );
+              prSpinner.stop();
+              if (pr.skipped) {
+                printInfo(`  既存 PR あり: ${detail.branch}`);
+              } else {
+                printSuccess(`  PR #${pr.number} 作成: ${pr.url}`);
+              }
+            } catch (prError) {
+              prSpinner.fail(`  PR 作成失敗: ${detail.branch}`);
+              printError(
+                `    ${prError instanceof Error ? prError.message : String(prError)}`,
+              );
+            }
+          }
         }
       } catch (error) {
         spinner.fail("タスク実行に失敗しました");

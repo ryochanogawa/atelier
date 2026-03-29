@@ -3,11 +3,15 @@
  * タスクキューへの追加・一括実行を行うユースケース。
  */
 
+import path from "node:path";
 import { TaskQueue, createTask, type Task, type CreateTaskParams } from "../../domain/models/task.model.js";
 import { TaskStoreAdapter } from "../../adapters/config/task-store.adapter.js";
 import { CommissionRunUseCase, type ConfigPort, type VcsPort, type LoggerPort } from "./run-commission.use-case.js";
 import type { MediumRegistry } from "../services/commission-runner.service.js";
 import type { TypedEventEmitter, AtelierEvents } from "../../infrastructure/event-bus/event-emitter.js";
+import { resolveAtelierPath } from "../../shared/utils.js";
+import { REQUIREMENTS_DIR } from "../../shared/constants.js";
+import { listFiles, readTextFile } from "../../infrastructure/fs/file-system.js";
 
 /**
  * QueueTaskUseCase
@@ -103,40 +107,41 @@ export class RunQueueUseCase {
     let branch: string | undefined;
 
     try {
-      if (task.commission) {
-        const useCase = new CommissionRunUseCase(
-          this.configPort,
-          this.vcsPort,
-          this.loggerPort,
-          this.mediumRegistry,
-          this.eventBus,
-        );
-        const result = await useCase.execute(task.commission, projectPath, {
-          dryRun: false,
-        });
+      const commissionName = task.commission ?? "default";
 
-        branch = result.runId ? `atelier/${result.runId}` : undefined;
+      // 最新の要件定義を自動で読み込み、Canvas に注入する
+      const initialCanvas: Record<string, string> = {};
+      initialCanvas.requirements = task.description;
+      const latestReq = await this.findLatestRequirements(projectPath);
+      if (latestReq) {
+        initialCanvas.requirements = `${latestReq}\n\n## 今回のタスク\n${task.description}`;
+      }
 
-        if (result.status === "completed") {
-          queue.markCompleted(task.id);
-          await this.store.save(queue.list());
-          return { task, success: true, branch };
-        } else {
-          queue.markFailed(task.id);
-          await this.store.save(queue.list());
-          const errorMsg = result.errors.length > 0
-            ? result.errors.map((e) => e.message).join("; ")
-            : "Commission failed";
-          return { task, success: false, branch, error: errorMsg };
-        }
-      } else {
-        // commission が指定されていない場合はスキップ（完了扱い）
-        this.loggerPort.warn(
-          `タスク '${task.id}' に commission が指定されていません。スキップします。`,
-        );
+      const useCase = new CommissionRunUseCase(
+        this.configPort,
+        this.vcsPort,
+        this.loggerPort,
+        this.mediumRegistry,
+        this.eventBus,
+      );
+      const result = await useCase.execute(commissionName, projectPath, {
+        dryRun: false,
+        initialCanvas,
+      });
+
+      branch = result.runId ? `atelier/${result.runId}` : undefined;
+
+      if (result.status === "completed") {
         queue.markCompleted(task.id);
         await this.store.save(queue.list());
-        return { task, success: true };
+        return { task, success: true, branch };
+      } else {
+        queue.markFailed(task.id);
+        await this.store.save(queue.list());
+        const errorMsg = result.errors.length > 0
+          ? result.errors.map((e) => e.message).join("; ")
+          : "Commission failed";
+        return { task, success: false, branch, error: errorMsg };
       }
     } catch (error) {
       queue.markFailed(task.id);
@@ -146,6 +151,22 @@ export class RunQueueUseCase {
         `タスク '${task.id}' の実行に失敗: ${errorMsg}`,
       );
       return { task, success: false, branch, error: errorMsg };
+    }
+  }
+
+  /**
+   * .atelier/requirements/ から最新の要件定義ファイルを読み込む。
+   */
+  private async findLatestRequirements(projectPath: string): Promise<string | null> {
+    try {
+      const reqDir = path.join(resolveAtelierPath(projectPath), REQUIREMENTS_DIR);
+      const files = await listFiles(reqDir, ".md");
+      if (files.length === 0) return null;
+      // ファイル名が日付+時刻なのでソートすれば最新が末尾
+      const latest = files.sort().pop()!;
+      return readTextFile(latest);
+    } catch {
+      return null;
     }
   }
 
