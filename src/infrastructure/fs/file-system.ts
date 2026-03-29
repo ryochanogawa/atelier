@@ -79,6 +79,21 @@ export async function listFiles(
 }
 
 /**
+ * ディレクトリ内のサブディレクトリ一覧を取得する。
+ */
+export async function listDirs(dirPath: string): Promise<string[]> {
+  try {
+    const entries = await fs.readdir(dirPath, { withFileTypes: true });
+    return entries
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+/**
  * ファイルまたはディレクトリを再帰的に削除する。
  */
 export async function remove(targetPath: string): Promise<void> {

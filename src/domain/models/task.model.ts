@@ -16,6 +16,7 @@ export interface Task {
   readonly id: string;
   readonly description: string;
   readonly commission?: string;
+  readonly requirementsId?: number;
   status: TaskStatus;
   readonly createdAt: string;
   readonly source: TaskSource;
@@ -25,6 +26,7 @@ export interface Task {
 export interface CreateTaskParams {
   readonly description: string;
   readonly commission?: string;
+  readonly requirementsId?: number;
   readonly source?: TaskSource;
 }
 
@@ -36,6 +38,7 @@ export function createTask(params: CreateTaskParams): Task {
     id: nanoid(8),
     description: params.description,
     commission: params.commission,
+    requirementsId: params.requirementsId,
     status: "queued",
     createdAt: new Date().toISOString(),
     source: params.source ?? "manual",

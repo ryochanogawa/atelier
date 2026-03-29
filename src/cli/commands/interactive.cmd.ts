@@ -27,7 +27,7 @@ import { IntentEnhancerService } from "../../domain/services/intent-enhancer.ser
 import { RequirementsStoreAdapter } from "../../adapters/config/requirements-store.adapter.js";
 import { resolveAtelierPath } from "../../shared/utils.js";
 import { REQUIREMENTS_DIR, COMMISSIONS_DIR } from "../../shared/constants.js";
-import { writeTextFile, readTextFile, listFiles } from "../../infrastructure/fs/file-system.js";
+import { writeTextFile, readTextFile, listFiles, listDirs } from "../../infrastructure/fs/file-system.js";
 import { CommissionRunUseCase } from "../../application/use-cases/run-commission.use-case.js";
 import { listBuiltinCommissions } from "../../builtin/index.js";
 import { createEventBus } from "../../infrastructure/event-bus/event-emitter.js";
@@ -48,6 +48,25 @@ function promptLine(promptText: string): Promise<string> {
       resolve(answer);
     });
   });
+}
+
+/**
+ * 要件定義を連番IDフォルダに保存し、IDを返す。
+ * .atelier/requirements/{id}/requirements.md
+ */
+async function saveRequirements(content: string, projectPath: string): Promise<number> {
+  const reqDir = path.join(resolveAtelierPath(projectPath), REQUIREMENTS_DIR);
+
+  // 次の連番IDを計算
+  const dirs = await listDirs(reqDir);
+  const numericDirs = dirs
+    .map((d) => parseInt(d, 10))
+    .filter((n) => !isNaN(n));
+  const nextId = numericDirs.length > 0 ? Math.max(...numericDirs) + 1 : 1;
+
+  const filePath = path.join(reqDir, String(nextId), "requirements.md");
+  await writeTextFile(filePath, content);
+  return nextId;
 }
 
 /** Commission 一覧を取得する（プロジェクト固有 + ビルトイン） */
@@ -339,17 +358,11 @@ async function handleGoCommand(
     return;
   }
 
-  // Step 3: 要件定義をファイルに保存
-  const now = new Date();
-  const date = now.toISOString().slice(0, 10);
-  const time = now.toISOString().slice(11, 19).replace(/:/g, "");
-  const filename = `${date}_${time}_requirements.md`;
-  const reqDir = path.join(resolveAtelierPath(projectPath), REQUIREMENTS_DIR);
-  const reqPath = path.join(reqDir, filename);
-
+  // Step 3: 要件定義をファイルに保存（連番IDフォルダ方式）
+  let reqId: number;
   try {
-    await writeTextFile(reqPath, taskText);
-    printSuccess(`タスク指示書を保存: ${reqPath}`);
+    reqId = await saveRequirements(taskText, projectPath);
+    printSuccess(`タスク指示書を保存しました: #${reqId}`);
   } catch (error) {
     printError(`保存に失敗: ${error instanceof Error ? error.message : String(error)}`);
     return;
@@ -578,13 +591,13 @@ async function handleAnalyzeConversation(
 
   try {
     const store = new RequirementsStoreAdapter(process.cwd());
-    const savedPath = await store.save({
+    const reqId = await store.save({
       document: doc,
       contradictions,
       gaps,
       checklist,
     });
-    printSuccess(`要件定義書を保存しました: ${savedPath}`);
+    printSuccess(`要件定義書を保存しました: #${reqId}`);
     console.log();
   } catch (error) {
     printError(
@@ -637,18 +650,12 @@ async function handleImplement(
     return;
   }
 
-  // Step 2: 要件定義をファイルに保存
+  // Step 2: 要件定義をファイルに保存（連番IDフォルダ方式）
   const projectPath = process.cwd();
-  const now = new Date();
-  const date = now.toISOString().slice(0, 10);
-  const time = now.toISOString().slice(11, 19).replace(/:/g, "");
-  const filename = `${date}_${time}_requirements.md`;
-  const reqDir = path.join(resolveAtelierPath(projectPath), REQUIREMENTS_DIR);
-  const reqPath = path.join(reqDir, filename);
-
+  let reqId: number;
   try {
-    await writeTextFile(reqPath, requirements);
-    printSuccess(`要件定義書を保存: ${reqPath}`);
+    reqId = await saveRequirements(requirements, projectPath);
+    printSuccess(`要件定義書を保存しました: #${reqId}`);
   } catch (error) {
     printError(`保存に失敗: ${error instanceof Error ? error.message : String(error)}`);
     return;
@@ -662,7 +669,7 @@ async function handleImplement(
 
   if (answer.trim().toLowerCase() !== "y" && answer.trim().toLowerCase() !== "yes") {
     printInfo("キャンセルしました。要件定義書は保存済みです。");
-    printInfo(`後から実行: atelier commission run ${commissionName} --context requirements=${reqPath}`);
+    printInfo(`後から実行: atelier commission run ${commissionName}`);
     console.log();
     return;
   }
@@ -705,22 +712,12 @@ async function handleSaveConversation(
     const content = await session.sendMessage(summarizePrompt);
     spinner.stop();
 
-    const now = new Date();
-    const date = now.toISOString().slice(0, 10);
-    const time = now.toISOString().slice(11, 19).replace(/:/g, "");
-    const filename = `${date}_${time}_requirements.md`;
-    const dirPath = path.join(
-      resolveAtelierPath(process.cwd()),
-      REQUIREMENTS_DIR,
-    );
-    const filePath = path.join(dirPath, filename);
-
-    await writeTextFile(filePath, content);
+    const reqId = await saveRequirements(content, process.cwd());
 
     console.log();
     console.log(chalk.green("ai > ") + content);
     console.log();
-    printSuccess(`要件定義書を保存しました: ${filePath}`);
+    printSuccess(`要件定義書を保存しました: #${reqId}`);
     console.log();
   } catch (error) {
     spinner.fail("要件定義書の生成に失敗しました");

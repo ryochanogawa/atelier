@@ -150,14 +150,23 @@ export function createTaskCommand(): Command {
     .command("add <description>")
     .description("タスクをキューに追加する")
     .option("--commission <name>", "使用する Commission を指定")
+    .option("--req <number>", "紐づける要件定義ID")
     .action(async (description: string, opts) => {
       const projectPath = process.cwd();
 
       try {
+        const requirementsId = opts.req ? parseInt(opts.req, 10) : undefined;
+        if (opts.req && (isNaN(requirementsId!) || requirementsId! < 1)) {
+          printError("--req には正の整数を指定してください");
+          process.exitCode = 1;
+          return;
+        }
+
         const useCase = new QueueTaskUseCase(projectPath);
         const newTask = await useCase.execute({
           description,
           commission: opts.commission,
+          requirementsId,
           source: "manual",
         });
 
@@ -165,6 +174,9 @@ export function createTaskCommand(): Command {
         printInfo(`  説明: ${newTask.description}`);
         if (newTask.commission) {
           printInfo(`  Commission: ${newTask.commission}`);
+        }
+        if (newTask.requirementsId != null) {
+          printInfo(`  要件定義: #${newTask.requirementsId}`);
         }
       } catch (error) {
         printError(
@@ -200,10 +212,10 @@ export function createTaskCommand(): Command {
                   ? chalk.yellow(t.status)
                   : chalk.white(t.status);
 
-          return [t.id, t.description, statusColor, t.commission ?? "-", t.source];
+          return [t.id, t.description, statusColor, t.commission ?? "-", t.requirementsId != null ? `#${t.requirementsId}` : "-", t.source];
         });
 
-        printTable(["ID", "Description", "Status", "Commission", "Source"], rows);
+        printTable(["ID", "Description", "Status", "Commission", "Req", "Source"], rows);
       } catch (error) {
         printError(
           error instanceof Error ? error.message : String(error),

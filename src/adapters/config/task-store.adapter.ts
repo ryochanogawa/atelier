@@ -20,6 +20,7 @@ interface TaskYaml {
   id: string;
   description: string;
   commission?: string;
+  requirements_id?: number;
   status: string;
   created_at: string;
   source: string;
@@ -64,6 +65,7 @@ export class TaskStoreAdapter {
       id: task.id,
       description: task.description,
       ...(task.commission ? { commission: task.commission } : {}),
+      ...(task.requirementsId != null ? { requirements_id: task.requirementsId } : {}),
       status: task.status,
       created_at: task.createdAt,
       source: task.source,
@@ -75,6 +77,7 @@ export class TaskStoreAdapter {
       id: yaml.id,
       description: yaml.description,
       commission: yaml.commission,
+      requirementsId: yaml.requirements_id,
       status: yaml.status as Task["status"],
       createdAt: yaml.created_at,
       source: yaml.source as Task["source"],

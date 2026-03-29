@@ -11,7 +11,7 @@ import type { MediumRegistry } from "../services/commission-runner.service.js";
 import type { TypedEventEmitter, AtelierEvents } from "../../infrastructure/event-bus/event-emitter.js";
 import { resolveAtelierPath } from "../../shared/utils.js";
 import { REQUIREMENTS_DIR } from "../../shared/constants.js";
-import { listFiles, readTextFile } from "../../infrastructure/fs/file-system.js";
+import { listDirs, readTextFile, fileExists } from "../../infrastructure/fs/file-system.js";
 
 /**
  * QueueTaskUseCase
@@ -109,12 +109,12 @@ export class RunQueueUseCase {
     try {
       const commissionName = task.commission ?? "default";
 
-      // 最新の要件定義を自動で読み込み、Canvas に注入する
+      // 要件定義を読み込み、Canvas に注入する（タスクにIDがあればそれを使用、なければ最新）
       const initialCanvas: Record<string, string> = {};
       initialCanvas.requirements = task.description;
-      const latestReq = await this.findLatestRequirements(projectPath);
-      if (latestReq) {
-        initialCanvas.requirements = `${latestReq}\n\n## 今回のタスク\n${task.description}`;
+      const reqContent = await this.findRequirements(projectPath, task.requirementsId);
+      if (reqContent) {
+        initialCanvas.requirements = `${reqContent}\n\n## 今回のタスク\n${task.description}`;
       }
 
       const useCase = new CommissionRunUseCase(
@@ -155,16 +155,37 @@ export class RunQueueUseCase {
   }
 
   /**
-   * .atelier/requirements/ から最新の要件定義ファイルを読み込む。
+   * .atelier/requirements/{id}/requirements.md から要件定義を読み込む。
+   * id が指定されていれば該当フォルダから、未指定なら最大番号フォルダから読む。
    */
-  private async findLatestRequirements(projectPath: string): Promise<string | null> {
+  private async findRequirements(projectPath: string, id?: number): Promise<string | null> {
     try {
       const reqDir = path.join(resolveAtelierPath(projectPath), REQUIREMENTS_DIR);
-      const files = await listFiles(reqDir, ".md");
-      if (files.length === 0) return null;
-      // ファイル名が日付+時刻なのでソートすれば最新が末尾
-      const latest = files.sort().pop()!;
-      return readTextFile(latest);
+
+      if (id != null) {
+        // 指定IDのフォルダから読む
+        const filePath = path.join(reqDir, String(id), "requirements.md");
+        if (await fileExists(filePath)) {
+          return readTextFile(filePath);
+        }
+        return null;
+      }
+
+      // 未指定: 最大番号フォルダから読む
+      const dirs = await listDirs(reqDir);
+      const numericDirs = dirs
+        .map((d) => parseInt(d, 10))
+        .filter((n) => !isNaN(n))
+        .sort((a, b) => a - b);
+
+      if (numericDirs.length === 0) return null;
+
+      const latestId = numericDirs[numericDirs.length - 1]!;
+      const filePath = path.join(reqDir, String(latestId), "requirements.md");
+      if (await fileExists(filePath)) {
+        return readTextFile(filePath);
+      }
+      return null;
     } catch {
       return null;
     }
