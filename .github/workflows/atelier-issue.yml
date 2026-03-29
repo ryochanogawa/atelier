@@ -1,0 +1,33 @@
+name: ATELIER Issue Handler
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  run:
+    if: contains(github.event.comment.body, '@atelier')
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/atelier-action
+        with:
+          auto-pr: 'true'
+          draft: 'true'
+
+      # ── 他の Medium を使う場合の例 ──────────────────────
+      #
+      # Codex CLI を使う場合:
+      #   - uses: ./.github/actions/atelier-action
+      #     with:
+      #       auto-pr: 'true'
+      #       draft: 'true'
+      #     env:
+      #       ATELIER_MEDIUM: codex
+      #
+      # Gemini CLI を使う場合:
+      #   - uses: ./.github/actions/atelier-action
+      #     with:
+      #       auto-pr: 'true'
+      #       draft: 'true'
+      #     env:
+      #       ATELIER_MEDIUM: gemini

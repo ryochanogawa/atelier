@@ -1,0 +1,172 @@
+name: error-handling-policy
+description: エラーハンドリング規約。例外型、リトライ戦略、ログ基準。
+
+rules:
+  - name: error-handling-principles
+    description: エラーハンドリングの基本原則
+    content: |
+      ## 原則
+      - Fail Fast: エラーは検出した時点で即座に報告する。処理を続行しない
+      - エラーを握りつぶさない。空の catch ブロックは禁止
+      - フォールバック値でエラーを隠蔽しない（?? 'unknown' は禁止）
+      - エラーハンドリングは上位レイヤーに集約する。各関数に散在させない
+      - エラーの原因と対処法を含むメッセージを記述する
+
+      ## 禁止パターン
+      ```typescript
+      // 禁止: エラーの握りつぶし
+      try {
+        await saveUser(user);
+      } catch (e) {
+        // 何もしない
+      }
+
+      // 禁止: フォールバック値でエラーを隠蔽
+      const userId = user?.id ?? 'unknown';
+      processUser(userId);  // 'unknown' で処理が続行される
+
+      // 禁止: 各関数で try-catch を散在
+      async function createUser(data) {
+        try {
+          return await userService.create(data);
+        } catch (e) {
+          console.error(e);
+          throw new Error('Failed');
+        }
+      }
+      ```
+
+      ## 推奨パターン
+      ```typescript
+      // 推奨: Fail Fast
+      if (!user?.id) {
+        throw new UserNotFoundError('User ID is required');
+      }
+
+      // 推奨: エラーを上位に伝播
+      async function createUser(data) {
+        return await userService.create(data);  // 例外は上位で処理
+      }
+
+      // 推奨: 上位レイヤーで集約処理
+      // Controller/Handler レイヤーで一括キャッチ
+      ```
+
+  - name: error-type-hierarchy
+    description: エラー型の体系
+    content: |
+      ## カスタムエラー型の設計
+      エラーは用途に応じた型で throw する。汎用の Error をそのまま使わない。
+
+      | カテゴリ | エラー型 | HTTP 相当 | 用途 |
+      |----------|----------|-----------|------|
+      | バリデーション | ValidationError | 400 | 入力値の不正 |
+      | 認証 | AuthenticationError | 401 | 未認証 |
+      | 認可 | AuthorizationError | 403 | 権限不足 |
+      | リソース不在 | NotFoundError | 404 | リソースが見つからない |
+      | 競合 | ConflictError | 409 | リソースの競合 |
+      | 内部エラー | InternalError | 500 | サーバー内部のエラー |
+      | 外部サービス | ExternalServiceError | 502/503 | 外部 API の障害 |
+      | タイムアウト | TimeoutError | 504 | 処理時間の超過 |
+
+      ## エラーメッセージ基準
+      - ユーザー向け: 何が問題で、どうすればよいか
+      - 開発者向け: 発生箇所、入力値、スタックトレース
+      - ユーザー向けと開発者向けのメッセージを分離する
+
+      ## 実装例
+      ```typescript
+      class AppError extends Error {
+        constructor(
+          message: string,
+          public readonly code: string,
+          public readonly statusCode: number,
+          public readonly details?: unknown,
+        ) {
+          super(message);
+          this.name = this.constructor.name;
+        }
+      }
+
+      class NotFoundError extends AppError {
+        constructor(resource: string, id: string) {
+          super(
+            `${resource} (id: ${id}) が見つかりません`,
+            'NOT_FOUND',
+            404,
+          );
+        }
+      }
+      ```
+
+  - name: error-handling-placement
+    description: エラーハンドリングの配置
+    content: |
+      ## レイヤー別の責務
+      | レイヤー | 責務 |
+      |----------|------|
+      | ドメイン/サービス層 | ビジネスルール違反時に例外を throw |
+      | コントローラ/ハンドラ層 | 例外をキャッチしレスポンスに変換 |
+      | グローバルハンドラ | 共通例外の一括処理（NotFound, 認証エラー等） |
+
+      ## 判定基準
+      | 状況 | 判定 |
+      |------|------|
+      | 各関数に try-catch を散在させている | REJECT |
+      | catch で console.error して re-throw | REJECT（ログは上位で） |
+      | 空の catch ブロック | REJECT |
+      | catch で return '' や return null | REJECT（エラーの隠蔽） |
+      | 上位レイヤーでの集約処理 | OK |
+      | ErrorBoundary / @ControllerAdvice パターン | OK |
+
+  - name: retry-strategy
+    description: リトライ戦略
+    content: |
+      ## リトライ対象の判定
+      | エラー種別 | リトライ | 理由 |
+      |------------|----------|------|
+      | ネットワークタイムアウト | する | 一時的な障害の可能性 |
+      | HTTP 429 (Rate Limit) | する | バックオフ後にリトライ |
+      | HTTP 500, 502, 503 | する | サーバー側の一時障害 |
+      | HTTP 400 (Bad Request) | しない | リクエストの問題 |
+      | HTTP 401, 403 | しない | 認証/認可の問題 |
+      | HTTP 404 | しない | リソース不在 |
+      | バリデーションエラー | しない | 入力値の問題 |
+
+      ## リトライパラメータ
+      | パラメータ | 推奨値 | 説明 |
+      |------------|--------|------|
+      | 最大リトライ回数 | 3回 | 無限リトライは禁止 |
+      | 初回待機時間 | 1秒 | 指数バックオフの基準値 |
+      | バックオフ係数 | 2倍 | 1s → 2s → 4s |
+      | 最大待機時間 | 30秒 | バックオフの上限 |
+      | ジッター | あり | 同時リトライの分散 |
+
+      ## 禁止パターン
+      - リトライ回数の上限がない無限リトライ
+      - バックオフなしの即時リトライ
+      - リトライ不可能なエラーに対するリトライ
+
+  - name: logging-standards
+    description: ログ基準
+    content: |
+      ## ログレベル
+      | レベル | 用途 | 例 |
+      |--------|------|-----|
+      | ERROR | 即座に対応が必要な異常 | DB接続失敗、決済処理エラー |
+      | WARN | 潜在的な問題。監視対象 | リトライ発生、閾値超過 |
+      | INFO | 正常な業務イベント | ユーザー作成、注文完了 |
+      | DEBUG | 開発時のデバッグ情報 | 関数の入出力、SQL クエリ |
+
+      ## 必須ログ項目
+      - タイムスタンプ（ISO 8601 形式）
+      - ログレベル
+      - リクエスト ID / トレース ID（分散システムの場合）
+      - エラー発生箇所（ファイル名・関数名）
+      - エラーメッセージとスタックトレース（ERROR レベル時）
+
+      ## 禁止パターン
+      - 機密データ（パスワード、トークン、個人情報）のログ出力
+      - console.log の本番コード残留
+      - スタックトレースなしの ERROR ログ
+      - 大量のデータオブジェクトの丸ごとログ出力

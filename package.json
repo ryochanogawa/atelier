@@ -10,7 +10,8 @@
     "atelier": "./bin/atelier.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "copy:builtin": "rm -rf dist/builtin/commissions dist/builtin/palettes dist/builtin/policies dist/builtin/contracts dist/builtin/instructions dist/builtin/knowledge && cp -R src/builtin/commissions dist/builtin/commissions && cp -R src/builtin/palettes dist/builtin/palettes && cp -R src/builtin/policies dist/builtin/policies && cp -R src/builtin/contracts dist/builtin/contracts && cp -R src/builtin/instructions dist/builtin/instructions && cp -R src/builtin/knowledge dist/builtin/knowledge",
+    "build": "tsc -p tsconfig.build.json && npm run copy:builtin",
     "dev": "tsx src/cli/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -22,29 +23,37 @@
     "docker:run": "docker run --rm -it atelier-cli"
   },
   "dependencies": {
-    "commander": "^12.1.0",
     "chalk": "^5.3.0",
+    "cli-table3": "^0.6.5",
+    "commander": "^12.1.0",
     "execa": "^9.3.0",
-    "simple-git": "^3.25.0",
-    "yaml": "^2.4.0",
-    "zod": "^3.23.0",
-    "pino": "^9.2.0",
-    "pino-pretty": "^11.2.0",
     "handlebars": "^4.7.8",
     "nanoid": "^5.0.7",
     "ora": "^8.0.1",
-    "cli-table3": "^0.6.5"
+    "pino": "^9.2.0",
+    "pino-pretty": "^11.2.0",
+    "simple-git": "^3.25.0",
+    "ws": "^8.20.0",
+    "yaml": "^2.4.0",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
-    "typescript": "^5.5.0",
-    "vitest": "^1.6.0",
-    "tsx": "^4.15.0",
-    "eslint": "^9.5.0",
+    "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^7.13.0",
     "@typescript-eslint/parser": "^7.13.0",
-    "prettier": "^3.3.0"
+    "eslint": "^9.5.0",
+    "prettier": "^3.3.0",
+    "tsx": "^4.15.0",
+    "typescript": "^5.5.0",
+    "vitest": "^1.6.0"
   },
-  "keywords": ["ai", "agent", "orchestration", "cli", "ddd"],
+  "keywords": [
+    "ai",
+    "agent",
+    "orchestration",
+    "cli",
+    "ddd"
+  ],
   "license": "MIT"
 }

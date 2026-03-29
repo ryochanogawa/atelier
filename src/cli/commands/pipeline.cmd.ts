@@ -8,7 +8,7 @@ import ora from "ora";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { PipelineRunUseCase } from "../../application/use-cases/pipeline-run.use-case.js";
-import { GitHubPRAdapter } from "../../adapters/vcs/github-pr.adapter.js";
+import { createPRAdapter } from "../../adapters/vcs/create-pr-adapter.js";
 import { createEventBus } from "../../infrastructure/event-bus/event-emitter.js";
 import { readTextFile } from "../../infrastructure/fs/file-system.js";
 import { resolveAtelierPath } from "../../shared/utils.js";
@@ -144,7 +144,7 @@ export function createPipelineCommand(): Command {
       try {
         const mediumRegistry = await createMediumRegistry(projectPath);
         const eventBus = createEventBus();
-        const prAdapter = opts.autoPr ? new GitHubPRAdapter() : undefined;
+        const prAdapter = opts.autoPr ? await createPRAdapter(projectPath) : undefined;
 
         const useCase = new PipelineRunUseCase(
           createConfigPort(),

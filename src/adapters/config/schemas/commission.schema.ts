@@ -25,17 +25,31 @@ export const TransitionYamlSchema = z.object({
   on_max_retries: z.enum(["fail", "skip", "continue"]).optional(),
 });
 
-export const StrokeYamlSchema = z.object({
+export const ParallelSubStrokeYamlSchema = z.object({
   name: z.string().min(1),
   palette: z.string().min(1),
+  instruction: z.string().min(1),
+  knowledge: z.array(z.string()).optional(),
+  contract: z.string().optional(),
+});
+
+export const StrokeYamlSchema = z.object({
+  name: z.string().min(1),
+  palette: z.string().min(1).optional(),
   medium: z.string().optional(),
   allow_edit: z.boolean().optional(),
-  instruction: z.string().min(1),
+  instruction: z.string().min(1).optional(),
   inputs: z.array(z.string()).optional(),
   outputs: z.array(z.string()).optional(),
   transitions: z.array(TransitionYamlSchema).optional(),
   depends_on: z.array(z.string()).optional(),
-});
+  contract: z.string().optional(),
+  knowledge: z.array(z.string()).optional(),
+  parallel: z.array(ParallelSubStrokeYamlSchema).optional(),
+}).refine(
+  (data) => data.parallel !== undefined || (data.palette !== undefined && data.instruction !== undefined),
+  { message: "Either 'parallel' or both 'palette' and 'instruction' must be provided" },
+);
 
 export const CommissionSchema = z.object({
   name: z.string().min(1),

@@ -1,0 +1,110 @@
+name: documentation-policy
+description: ドキュメント規約。JSDoc、README、CHANGELOG の記述基準。
+
+rules:
+  - name: jsdoc-standards
+    description: JSDoc コメント基準
+    content: |
+      ## 必須対象
+      - 公開 API（export されるすべての関数・クラス・型）
+      - 複雑なビジネスロジック
+      - 非自明な副作用を持つ関数
+
+      ## 記述ルール
+      - @param に型と説明を記述する
+      - @returns に戻り値の型と説明を記述する
+      - @throws に発生しうる例外を記述する
+      - @example に使用例を1つ以上含める（公開 API の場合）
+      - @deprecated には代替手段と移行方法を記述する
+
+      ## 禁止パターン
+      - What/How コメント（コードを読めばわかることを書かない）
+      - 自動生成のような形骸化した JSDoc（例: @param name - name）
+      - コードと乖離した JSDoc（メンテナンスされていない記述）
+
+      ## 推奨例
+      ```typescript
+      /**
+       * ユーザーの認証トークンを検証し、ペイロードを返す。
+       * トークンの有効期限が切れている場合は TokenExpiredError をスローする。
+       *
+       * @param token - JWT 形式の認証トークン
+       * @returns デコードされたトークンペイロード
+       * @throws {TokenExpiredError} トークンの有効期限切れ
+       * @throws {InvalidTokenError} トークンの形式が不正
+       *
+       * @example
+       * const payload = verifyToken('eyJhbGciOi...');
+       * console.log(payload.userId);
+       */
+      ```
+
+  - name: readme-standards
+    description: README 記述基準
+    content: |
+      ## 必須セクション
+      1. プロジェクト概要（1-2文で何をするものか）
+      2. セットアップ手順（前提条件、インストール、初期設定）
+      3. 使用方法（基本的な使い方のコード例）
+      4. 設定（環境変数、設定ファイルの説明）
+      5. 開発（開発環境構築、テスト実行、ビルド手順）
+
+      ## 品質基準
+      - コードブロックにはシンタックスハイライトの言語指定を付ける
+      - コマンド例はコピー&ペーストで実行可能であること
+      - スクリーンショットやダイアグラムを含む場合は alt テキストを付ける
+      - 外部リンクは定期的に有効性を確認する
+
+      ## 禁止パターン
+      - 「TODO: 後で書く」のまま放置された README
+      - セットアップ手順が欠落した README
+      - ソースコードと乖離した古い記述
+
+  - name: changelog-standards
+    description: CHANGELOG 記述基準
+    content: |
+      ## フォーマット
+      Keep a Changelog 形式に従う。
+
+      ```markdown
+      ## [バージョン] - YYYY-MM-DD
+      ### Added（新機能）
+      ### Changed（変更）
+      ### Deprecated（非推奨）
+      ### Removed（削除）
+      ### Fixed（バグ修正）
+      ### Security（セキュリティ）
+      ```
+
+      ## 記述ルール
+      - 各エントリは利用者視点で記述する（内部実装の詳細は書かない）
+      - 破壊的変更には BREAKING CHANGE を明記し、移行方法を示す
+      - Issue 番号やPR 番号へのリンクを含める
+      - 意味のあるバージョン番号（セマンティックバージョニング）を使用する
+
+      ## 禁止パターン
+      - 「いろいろ修正」のような曖昧な記述
+      - 開発者しかわからない内部的な変更の記載
+      - バージョン番号のないエントリ
+
+  - name: inline-comment-standards
+    description: インラインコメント基準
+    content: |
+      ## コメントを書くべき場面
+      - なぜそのアプローチを選んだか（Why コメント）
+      - 外部制約やワークアラウンドの理由
+      - パフォーマンス上の理由がある非直感的なコード
+      - 正規表現の意図説明
+
+      ## コメントを書くべきでない場面
+      - コードを読めばわかること（What コメント）
+      - 処理の手順をなぞるだけのコメント（How コメント）
+      - 変更履歴（Git の履歴を使う）
+
+      ## TODO/FIXME 規約
+      - TODO: 将来実装すべき機能。Issue 番号を必ず付与する
+        例: // TODO(#123): キャッシュ機構の導入
+      - FIXME: 既知のバグ。Issue 番号と影響範囲を記載する
+        例: // FIXME(#456): 並行アクセス時にデッドロックの可能性あり
+      - HACK: 一時的な回避策。理由と除去条件を記載する
+        例: // HACK: ライブラリ v3 のバグ回避。v3.1 リリース後に除去

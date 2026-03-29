@@ -1,0 +1,77 @@
+name: design-output
+description: UI/UXデザインの出力フォーマット。アーキテクチャ・デザイン判断を構造化する。
+
+format: |
+  ## タスク規模
+  Small / Medium / Large
+
+  ## デザイン判断
+
+  ### ファイル構成
+  | ファイル | 役割 |
+  |---------|------|
+  | `src/example.ts` | 概要 |
+
+  ### 技術選定
+  - {選定した技術・ライブラリとその根拠}
+
+  ### デザインパターン
+  - {採用するパターンと適用箇所}
+
+  ### コンポーネント設計（UI の場合）
+  | コンポーネント | 責務 | Props |
+  |--------------|------|-------|
+
+  ### 状態管理（UI の場合）
+  | 状態 | スコープ | 管理方法 |
+  |------|---------|---------|
+
+  ### レスポンシブ対応方針（UI の場合）
+  | ブレークポイント | レイアウト変更 |
+  |----------------|--------------|
+
+  ## アクセシビリティ考慮事項（UI の場合）
+  - {WCAG 準拠、キーボードナビゲーション、スクリーンリーダー対応など}
+
+  ## 実装ガイドライン
+  - {Coder が実装時に従うべきガイドライン}
+
+fields:
+  - name: task_size
+    type: enum
+    values: [small, medium, large]
+    required: true
+    description: タスク規模の見積もり
+
+  - name: file_structure
+    type: array
+    items:
+      file: string
+      role: string
+    required: true
+    description: ファイル構成と各ファイルの役割
+
+  - name: technology_selection
+    type: array
+    required: false
+    description: 選定した技術・ライブラリとその根拠
+
+  - name: design_patterns
+    type: array
+    required: false
+    description: 採用するデザインパターンと適用箇所
+
+  - name: guidelines
+    type: array
+    required: true
+    description: 実装ガイドライン一覧
+
+  - name: components
+    type: array
+    required: false
+    description: コンポーネント設計（UI の場合）
+
+  - name: accessibility
+    type: array
+    required: false
+    description: アクセシビリティ考慮事項

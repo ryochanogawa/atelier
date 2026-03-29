@@ -11,6 +11,7 @@ import { formatDuration } from "../../shared/utils.js";
 export interface CreatePRResult {
   readonly number: number;
   readonly url: string;
+  readonly skipped?: boolean;
 }
 
 export class CreatePRUseCase {
@@ -21,14 +22,32 @@ export class CreatePRUseCase {
 
   /**
    * 実行結果からPRタイトル・本文を自動生成し、PR を作成する。
+   * PR 作成前に git push origin <branch> を実行する。
+   * 既存PRがあればスキップする。
    */
   async execute(
     runResult: RunResultDto,
-    options: { base: string; head: string },
+    options: { base: string; head: string; draft?: boolean; taskDescription?: string },
   ): Promise<CreatePRResult> {
     this.loggerPort.info(`PR を作成中... (base: ${options.base}, head: ${options.head})`);
 
-    const title = this.buildTitle(runResult);
+    // 既存PRチェック — 存在する場合はコメントを追加
+    const existingPRs = await this.pullRequest.listPRs({ head: options.head });
+    if (existingPRs.length > 0) {
+      const existing = existingPRs[0]!;
+      this.loggerPort.info(`既存の PR #${existing.number} が見つかりました。コメントを追加します: ${existing.url}`);
+
+      const commentBody = this.buildBody(runResult);
+      await this.pullRequest.commentOnPr(existing.number, commentBody);
+
+      return { number: existing.number, url: existing.url, skipped: true };
+    }
+
+    // リモートへプッシュ
+    this.loggerPort.info(`ブランチ '${options.head}' をリモートへプッシュ中...`);
+    await this.pullRequest.pushBranch(options.head);
+
+    const title = this.buildTitle(runResult, options.taskDescription);
     const body = this.buildBody(runResult);
 
     const pr = await this.pullRequest.createPR({
@@ -36,6 +55,7 @@ export class CreatePRUseCase {
       body,
       base: options.base,
       head: options.head,
+      draft: options.draft,
     });
 
     this.loggerPort.info(`PR #${pr.number} を作成しました: ${pr.url}`);
@@ -45,8 +65,15 @@ export class CreatePRUseCase {
 
   /**
    * PR タイトルを生成する。
+   * taskDescription があればそれを使い、100文字で切り詰める。
    */
-  private buildTitle(result: RunResultDto): string {
+  private buildTitle(result: RunResultDto, taskDescription?: string): string {
+    if (taskDescription) {
+      const truncated = taskDescription.length > 100
+        ? taskDescription.slice(0, 100) + "..."
+        : taskDescription;
+      return truncated;
+    }
     return `atelier: ${result.commissionName} (${result.runId})`;
   }
 

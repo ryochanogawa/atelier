@@ -90,6 +90,7 @@ export class CommissionRunUseCase {
         mediumRegistry: this.mediumRegistry,
         defaultMedium: options.medium ?? studioConfig.defaultMedium,
         cwd: worktreePath,
+        projectPath,
       });
 
       const result = await runner.execute(commission, runId, options);
@@ -111,7 +112,7 @@ export class CommissionRunUseCase {
 
       await this.saveRunLog(projectPath, runResult);
 
-      // 6. Worktree 後処理
+      // 6. Worktree 後処理 — コミットのみ行い、worktree は保持する（takt 方式）
       if (!options.dryRun && worktreePath !== projectPath) {
         try {
           if (result.status === "completed") {
@@ -120,7 +121,11 @@ export class CommissionRunUseCase {
               `atelier: ${commissionName} (${runId})`,
             );
           }
-          await this.vcsPort.removeWorktree(worktreePath);
+          // removeWorktree は呼ばない — worktree を保持する。
+          // ユーザーが atelier branch delete/merge で明示的に操作する。
+          this.loggerPort.info(
+            `Worktree を保持: ${worktreePath} (branch: atelier/${runId})`,
+          );
         } catch (error) {
           this.loggerPort.warn(
             `Worktree 後処理に失敗: ${error instanceof Error ? error.message : String(error)}`,

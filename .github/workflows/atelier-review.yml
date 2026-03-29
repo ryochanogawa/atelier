@@ -1,0 +1,13 @@
+name: ATELIER PR Review
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  review:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run review
+        run: atelier "このPRの変更をレビューして" --direct --skip-git
+      # PR コメント投稿は別途実装

@@ -1,0 +1,59 @@
+name: implementation-output
+description: 実装結果の出力フォーマット。実装完了時のサマリーを構造化する。
+
+format: |
+  ## タスク
+  {{original_request}}
+
+  ## 結果
+  {Completed / Partial}
+
+  ## 変更内容
+  | 種別 | ファイル | 概要 |
+  |------|---------|------|
+  | 新規作成 | `src/example.ts` | 簡潔な説明 |
+  | 変更 | `src/routes.ts` | 簡潔な説明 |
+  | 削除 | `src/old.ts` | 簡潔な説明 |
+
+  ## 設計判断ログ
+  ### 1. {判断内容}
+  - **背景**: {判断が必要だった理由}
+  - **検討した選択肢**: {選択肢の一覧}
+  - **根拠**: {この選択肢を採用した理由}
+
+  ## 検証結果
+  - {テスト/ビルド/動作確認のエビデンス}
+
+  ## 既知の制限事項（あれば）
+  - {既知の制限や後続対応が必要な項目}
+
+fields:
+  - name: original_request
+    type: string
+    required: true
+    description: 元のタスク要求（1-2文）
+
+  - name: result
+    type: enum
+    values: [completed, partial]
+    required: true
+    description: 実装結果のステータス
+
+  - name: changes
+    type: array
+    items:
+      type: enum[create, modify, delete]
+      file: string
+      description: string
+    required: true
+    description: 変更ファイル一覧
+
+  - name: verification
+    type: array
+    required: true
+    description: 検証結果のエビデンス一覧
+
+  - name: decisions
+    type: array
+    required: false
+    description: 設計判断のログ

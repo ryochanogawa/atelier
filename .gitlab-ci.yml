@@ -1,0 +1,22 @@
+stages:
+  - atelier
+
+# Issue コメントで @atelier メンションされた時に実行
+atelier:issue:
+  stage: atelier
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "trigger"
+  script:
+    - atelier "$ATELIER_TASK" --auto-pr --draft
+  tags:
+    - self-hosted
+
+# MR が開かれた時に自動レビュー
+atelier:review:
+  stage: atelier
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+  script:
+    - atelier "このMRの変更をレビューして" --direct --skip-git
+  tags:
+    - self-hosted

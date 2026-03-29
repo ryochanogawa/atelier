@@ -20,6 +20,10 @@ import { createReviewCommand } from "./commands/review.cmd.js";
 import { createAnalyzeCommand } from "./commands/analyze.cmd.js";
 import { createDocsCommand } from "./commands/docs.cmd.js";
 import { createSuggestCommand } from "./commands/suggest.cmd.js";
+import { createPromptCommand } from "./commands/prompt.cmd.js";
+import { createRunCommand } from "./commands/run.cmd.js";
+import { createCatalogCommand } from "./commands/catalog.cmd.js";
+import { createWatchCommand } from "./commands/watch.cmd.js";
 import { setOutputFormat } from "./output.js";
 
 const program = new Command();
@@ -37,6 +41,10 @@ program
   });
 
 // コマンド登録
+const runCmd = createRunCommand();
+runCmd.name("run");
+program.addCommand(runCmd, { isDefault: true });
+
 program.addCommand(createCommissionCommand());
 program.addCommand(createStudioCommand());
 program.addCommand(createMediumCommand());
@@ -52,5 +60,8 @@ program.addCommand(createReviewCommand());
 program.addCommand(createAnalyzeCommand());
 program.addCommand(createDocsCommand());
 program.addCommand(createSuggestCommand());
+program.addCommand(createPromptCommand());
+program.addCommand(createCatalogCommand());
+program.addCommand(createWatchCommand());
 
 program.parse(process.argv);

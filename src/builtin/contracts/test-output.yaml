@@ -1,0 +1,66 @@
+name: test-output
+description: テスト結果の出力フォーマット。テスト計画・実行結果を構造化する。
+
+format: |
+  ## 対象モジュール
+  {{target_modules}}
+
+  ## 既存テスト分析
+  | モジュール | 既存テスト | カバレッジ状況 |
+  |-----------|-----------|--------------|
+  | `src/xxx.ts` | `xxx.test.ts` | {カバレッジ状況} |
+
+  ## 不足テストケース
+  | # | 対象 | テストケース | 優先度 | 理由 |
+  |---|------|------------|--------|------|
+  | 1 | `src/xxx.ts` | {テストケースの概要} | High/Medium/Low | {理由} |
+
+  ## テスト戦略
+  - {モック方針}
+  - {フィクスチャ設計}
+  - {テストヘルパーの活用}
+
+  ## 実装ガイドライン
+  - {テスト実装者への具体的な指示}
+
+  ## テスト実行結果（実行後）
+  | テストスイート | 件数 | 成功 | 失敗 | スキップ |
+  |--------------|------|------|------|---------|
+
+  ## 検証エビデンス
+  - {テスト実行ログやカバレッジレポートの要約}
+
+fields:
+  - name: target_modules
+    type: array
+    required: true
+    description: テスト対象モジュール一覧
+
+  - name: existing_tests
+    type: array
+    items:
+      module: string
+      test_file: string
+      coverage_status: string
+    required: true
+    description: 既存テスト分析結果
+
+  - name: missing_cases
+    type: array
+    items:
+      target: string
+      case_summary: string
+      priority: enum[high, medium, low]
+      reason: string
+    required: false
+    description: 不足テストケース一覧
+
+  - name: test_strategy
+    type: array
+    required: true
+    description: テスト戦略の項目
+
+  - name: test_results
+    type: array
+    required: false
+    description: テスト実行結果（実行後に記入）

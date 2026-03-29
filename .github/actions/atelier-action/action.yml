@@ -1,0 +1,54 @@
+name: 'ATELIER Action'
+description: 'Run ATELIER CLI in GitHub Actions'
+inputs:
+  task:
+    description: 'Task description'
+    required: false
+  commission:
+    description: 'Commission name'
+    required: false
+    default: 'default'
+  piece:
+    description: 'Alias for commission'
+    required: false
+  auto-pr:
+    description: 'Auto-create PR'
+    required: false
+    default: 'false'
+  draft:
+    description: 'Create as draft PR'
+    required: false
+    default: 'false'
+  direct:
+    description: 'Run without Commission'
+    required: false
+    default: 'false'
+  base-branch:
+    description: 'Base branch for PR'
+    required: false
+    default: 'main'
+runs:
+  using: 'composite'
+  steps:
+    - name: Run ATELIER
+      shell: bash
+      run: |
+        ARGS=""
+        if [ "${{ inputs.direct }}" = "true" ]; then
+          ARGS="$ARGS --direct"
+        fi
+        if [ -n "${{ inputs.commission }}" ] && [ "${{ inputs.direct }}" != "true" ]; then
+          ARGS="$ARGS --commission ${{ inputs.commission }}"
+        fi
+        if [ "${{ inputs.auto-pr }}" = "true" ]; then
+          ARGS="$ARGS --auto-pr --base ${{ inputs.base-branch }}"
+        fi
+        if [ "${{ inputs.draft }}" = "true" ]; then
+          ARGS="$ARGS --draft"
+        fi
+        if [ -n "${{ inputs.task }}" ]; then
+          atelier "${{ inputs.task }}" $ARGS
+        elif [ -n "${{ github.event.comment.body }}" ]; then
+          TASK=$(echo "${{ github.event.comment.body }}" | sed 's/@atelier //')
+          atelier "$TASK" $ARGS
+        fi

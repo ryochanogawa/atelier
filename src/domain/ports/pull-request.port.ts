@@ -9,9 +9,16 @@ export interface PullRequestPort {
     body: string;
     base: string;
     head: string;
+    draft?: boolean;
   }): Promise<{ number: number; url: string }>;
 
-  listPRs(): Promise<
+  listPRs(options?: {
+    head?: string;
+  }): Promise<
     Array<{ number: number; title: string; state: string; url: string }>
   >;
+
+  pushBranch(branch: string): Promise<void>;
+
+  commentOnPr(prNumber: number, body: string): Promise<void>;
 }

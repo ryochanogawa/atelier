@@ -91,12 +91,33 @@ export class CommissionValidateUseCase {
           strokeNames.add(stroke.name);
         }
 
-        if (!stroke.palette || typeof stroke.palette !== "string") {
-          errors.push(`${prefix}: 'palette' は必須です`);
-        }
+        // parallel ストロークの場合は palette/instruction はサブストロークに定義される
+        const isParallelStroke = Array.isArray(stroke.parallel) && stroke.parallel.length > 0;
 
-        if (!stroke.instruction || typeof stroke.instruction !== "string") {
-          errors.push(`${prefix}: 'instruction' は必須です`);
+        if (!isParallelStroke) {
+          if (!stroke.palette || typeof stroke.palette !== "string") {
+            errors.push(`${prefix}: 'palette' は必須です`);
+          }
+
+          if (!stroke.instruction || typeof stroke.instruction !== "string") {
+            errors.push(`${prefix}: 'instruction' は必須です`);
+          }
+        } else {
+          // parallel サブストロークの検証
+          const parallelSubs = stroke.parallel as Record<string, unknown>[];
+          for (let k = 0; k < parallelSubs.length; k++) {
+            const sub = parallelSubs[k];
+            const subPrefix = `${prefix}.parallel[${k}]`;
+            if (!sub.name || typeof sub.name !== "string") {
+              errors.push(`${subPrefix}: 'name' は必須です`);
+            }
+            if (!sub.palette || typeof sub.palette !== "string") {
+              errors.push(`${subPrefix}: 'palette' は必須です`);
+            }
+            if (!sub.instruction || typeof sub.instruction !== "string") {
+              errors.push(`${subPrefix}: 'instruction' は必須です`);
+            }
+          }
         }
 
         if (stroke.transitions && Array.isArray(stroke.transitions)) {

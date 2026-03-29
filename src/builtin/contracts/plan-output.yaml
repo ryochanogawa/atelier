@@ -1,0 +1,73 @@
+name: plan-output
+description: 設計計画の出力フォーマット。計画ステップの構造化された出力形式を定義する。
+
+format: |
+  ## 元の要求
+  {{original_request}}
+
+  ## 分析
+
+  ### 目的
+  {達成すべきこと}
+
+  ### 参考資料の調査結果（参考資料がある場合）
+  {リファレンス実装のアプローチと現行実装との主な差異の概要}
+
+  ### スコープ
+  {影響範囲}
+
+  ### 検討したアプローチ（設計判断がある場合）
+  | アプローチ | 採用 | 根拠 |
+  |-----------|------|------|
+
+  ### 実装方針
+  {どのように進めるか}
+
+  ### 到達可能性と起動条件（ユーザー向け機能の追加・変更時）
+  | 項目 | 内容 |
+  |------|------|
+  | ユーザーエントリポイント | {メニュー/ルート/ボタン/リンク/外部呼び出し元、該当なしなら「なし」と明記} |
+  | 更新すべき呼び出し元/配線 | {更新が必要なファイルまたはレイヤー} |
+  | 起動条件 | {認証、権限、URL条件、フラグなど} |
+  | 残課題 | {未解決の配線、または「なし」} |
+
+  ## 実装ガイドライン（設計が必要な場合のみ）
+  - {Coder が実装時に従うべきガイドライン}
+
+  ## スコープ外（該当項目がある場合のみ）
+  | 項目 | 除外理由 |
+  |------|---------|
+
+  ## 未解決の質問（あれば）
+  - {不明点や確認が必要な項目}
+
+fields:
+  - name: original_request
+    type: string
+    required: true
+    description: ユーザーの元の要求（そのまま）
+
+  - name: objective
+    type: string
+    required: true
+    description: 達成すべき目的
+
+  - name: scope
+    type: string
+    required: true
+    description: 影響範囲
+
+  - name: implementation_approach
+    type: string
+    required: true
+    description: 実装方針
+
+  - name: guidelines
+    type: array
+    required: false
+    description: 実装ガイドライン一覧
+
+  - name: out_of_scope
+    type: array
+    required: false
+    description: スコープ外の項目と除外理由

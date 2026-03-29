@@ -1,0 +1,126 @@
+name: git-policy
+description: Git 運用規約。コミットメッセージ、ブランチ戦略、PR テンプレート。
+
+rules:
+  - name: commit-message-conventions
+    description: コミットメッセージ規約
+    content: |
+      ## フォーマット
+      Conventional Commits 形式に従う。
+
+      ```
+      <type>(<scope>): <subject>
+
+      <body>
+
+      <footer>
+      ```
+
+      ## type 一覧
+      | type | 用途 | 例 |
+      |------|------|-----|
+      | feat | 新機能 | feat(auth): ログイン機能を追加 |
+      | fix | バグ修正 | fix(api): レスポンスのNull参照を修正 |
+      | docs | ドキュメント | docs: README にセットアップ手順を追加 |
+      | style | フォーマット変更（動作に影響なし） | style: インデントを統一 |
+      | refactor | リファクタリング | refactor(user): サービス層を分割 |
+      | perf | パフォーマンス改善 | perf(query): N+1クエリを解消 |
+      | test | テスト追加/修正 | test(auth): ログインのエッジケースを追加 |
+      | chore | ビルドプロセスや補助ツール | chore: 依存パッケージを更新 |
+      | ci | CI 設定の変更 | ci: GitHub Actions にキャッシュを追加 |
+
+      ## ルール
+      - subject は50文字以内。命令形で記述する（「追加した」ではなく「追加」）
+      - body は72文字で折り返す。「なぜ」この変更が必要かを記述する
+      - 破壊的変更は footer に BREAKING CHANGE: を記述する
+      - Issue 番号を参照する場合は footer に記述（例: Closes #123）
+
+      ## 禁止パターン
+      - 「fix」「update」「修正」のような曖昧な subject
+      - body なしで大きな変更をコミット
+      - 複数の無関係な変更を1つのコミットにまとめる
+
+  - name: branch-strategy
+    description: ブランチ戦略
+    content: |
+      ## ブランチ命名規約
+      | 種類 | パターン | 例 |
+      |------|----------|-----|
+      | 機能 | feature/<issue-number>-<description> | feature/123-login-form |
+      | バグ修正 | fix/<issue-number>-<description> | fix/456-null-reference |
+      | ホットフィックス | hotfix/<description> | hotfix/security-patch |
+      | リリース | release/<version> | release/1.2.0 |
+      | チョア | chore/<description> | chore/update-dependencies |
+
+      ## ブランチルール
+      - main/master ブランチへの直接コミットは禁止
+      - 機能ブランチは main から作成する
+      - ブランチは短命にする（1-3日が目安、最長1週間）
+      - マージ後のブランチは削除する
+      - コンフリクトは merge ではなく rebase で解消する
+
+      ## コミットの粒度
+      - 1コミット = 1つの論理的な変更
+      - 「動く状態」でコミットする（ビルドが通らないコミットは禁止）
+      - WIP コミットはプッシュ前に squash する
+
+  - name: pull-request-standards
+    description: プルリクエスト基準
+    content: |
+      ## PR の基本ルール
+      - 1 PR = 1つの目的（機能、バグ修正、リファクタリング）
+      - PR サイズは 400行以下を目標とする（レビュー品質のため）
+      - 400行を超える場合はスタック PR を検討する
+      - ドラフト PR を活用して早期にフィードバックを得る
+
+      ## PR タイトル
+      コミットメッセージと同様の Conventional Commits 形式を使用する。
+      70文字以内に収める。
+
+      ## PR 本文テンプレート
+      ```markdown
+      ## 概要
+      この PR で何を達成するか（1-3行）
+
+      ## 変更内容
+      - 変更点1
+      - 変更点2
+
+      ## テスト計画
+      - [ ] ユニットテスト追加/更新
+      - [ ] 手動テスト実施
+      - [ ] エッジケースの確認
+
+      ## スクリーンショット（UI変更がある場合）
+
+      ## 関連 Issue
+      Closes #xxx
+      ```
+
+      ## レビュー前の自己チェック
+      - diff を自分で確認したか
+      - テストが通るか
+      - ビルドが成功するか
+      - 不要なファイル（デバッグログ、console.log）が含まれていないか
+      - コンフリクトがないか
+
+  - name: merge-strategy
+    description: マージ戦略
+    content: |
+      ## マージ方式
+      | 方式 | 用途 |
+      |------|------|
+      | Squash and Merge | 機能ブランチ → main（デフォルト） |
+      | Merge Commit | リリースブランチ → main |
+      | Rebase and Merge | 小さな修正、1コミットのPR |
+
+      ## マージ条件
+      - 必須: CI が全てパス
+      - 必須: 最低1人のレビュアーが APPROVE
+      - 必須: コンフリクトが解消済み
+      - 推奨: 最新の main に rebase 済み
+
+      ## 禁止事項
+      - main ブランチへの force push
+      - レビューなしのマージ（緊急ホットフィックスを除く）
+      - CI 失敗状態でのマージ

@@ -7,10 +7,11 @@ import { Command } from "commander";
 import ora from "ora";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
+import { simpleGit } from "simple-git";
 import { CommissionRunUseCase } from "../../application/use-cases/run-commission.use-case.js";
 import { CommissionValidateUseCase } from "../../application/use-cases/validate-commission.use-case.js";
 import { CreatePRUseCase } from "../../application/use-cases/create-pr.use-case.js";
-import { GitHubPRAdapter } from "../../adapters/vcs/github-pr.adapter.js";
+import { createPRAdapter } from "../../adapters/vcs/create-pr-adapter.js";
 import { createEventBus } from "../../infrastructure/event-bus/event-emitter.js";
 import { readTextFile, listFiles } from "../../infrastructure/fs/file-system.js";
 import { resolveAtelierPath } from "../../shared/utils.js";
@@ -69,19 +70,62 @@ function createConfigPort(): ConfigPort {
 }
 
 /**
- * 簡易 VcsPort 実装
+ * Git worktree ベースの VcsPort 実装。
+ * git リポジトリでない場合はフォールバックして basePath をそのまま返す。
  */
 function createVcsPort(): VcsPort {
   return {
-    async createWorktree(_basePath: string, _branchName: string): Promise<string> {
-      // 簡易実装: worktree 作成をスキップ
-      return _basePath;
+    async createWorktree(basePath: string, branchName: string): Promise<string> {
+      const git = simpleGit(basePath);
+
+      // git リポジトリかチェック
+      const isRepo = await git.checkIsRepo().catch(() => false);
+      if (!isRepo) {
+        return basePath;
+      }
+
+      // 現在のブランチを記憶
+      const currentBranch = (await git.revparse(["--abbrev-ref", "HEAD"])).trim();
+
+      // ブランチが既に存在するかチェック
+      const branches = await git.branchLocal();
+      if (!branches.all.includes(branchName)) {
+        // ブランチを作成して元に戻す
+        await git.checkoutLocalBranch(branchName);
+        await git.checkout(currentBranch);
+      }
+
+      // worktree パスを決定
+      const safeName = branchName.replace(/\//g, "-");
+      const worktreePath = path.join(basePath, ".atelier", "worktrees", safeName);
+
+      // 既に worktree が存在する場合はそのまま返す
+      try {
+        const worktreeList = await git.raw(["worktree", "list", "--porcelain"]);
+        if (worktreeList.includes(worktreePath)) {
+          return worktreePath;
+        }
+      } catch {
+        // 無視
+      }
+
+      await git.raw(["worktree", "add", worktreePath, branchName]);
+      return worktreePath;
     },
     async removeWorktree(_worktreePath: string): Promise<void> {
-      // noop
+      // takt と同様に削除しない — worktree を保持する。
+      // ユーザーが atelier branch delete で明示的に削除する。
     },
-    async commitAll(_cwd: string, _message: string): Promise<void> {
-      // noop
+    async commitAll(cwd: string, message: string): Promise<void> {
+      const git = simpleGit(cwd);
+      const isRepo = await git.checkIsRepo().catch(() => false);
+      if (!isRepo) return;
+
+      const status = await git.status();
+      if (status.files.length === 0) return;
+
+      await git.add("-A");
+      await git.commit(message);
     },
   };
 }
@@ -97,6 +141,20 @@ function createLoggerPort(): LoggerPort {
     debug: (msg: string) => {
       if (process.env.DEBUG) console.debug(`[DEBUG] ${msg}`);
     },
+  };
+}
+
+/**
+ * No-op VcsPort 実装。--skip-git 時に使用。
+ * worktree 作成・コミット・プッシュを一切行わず basePath をそのまま返す。
+ */
+function createNoopVcsPort(): VcsPort {
+  return {
+    async createWorktree(basePath: string, _branchName: string): Promise<string> {
+      return basePath;
+    },
+    async removeWorktree(_worktreePath: string): Promise<void> {},
+    async commitAll(_cwd: string, _message: string): Promise<void> {},
   };
 }
 
@@ -118,6 +176,19 @@ async function createMediumRegistry(projectPath: string): Promise<MediumRegistry
   };
 }
 
+/** --context key=file を蓄積するコレクタ */
+function collectContext(
+  value: string,
+  previous: Record<string, string>,
+): Record<string, string> {
+  const [key, ...rest] = value.split("=");
+  const filePath = rest.join("=");
+  if (key && filePath) {
+    previous[key] = filePath;
+  }
+  return previous;
+}
+
 export function createCommissionCommand(): Command {
   const commission = new Command("commission")
     .description("Commission（ワークフロー）の管理・実行");
@@ -131,7 +202,10 @@ export function createCommissionCommand(): Command {
     .option("--tui", "TUI モードで実行", false)
     .option("--json", "JSON 形式で出力", false)
     .option("--auto-pr", "実行完了後に自動で PR を作成する", false)
+    .option("--draft", "PR をドラフトとして作成する（--auto-pr と併用）", false)
     .option("--base <branch>", "PR のベースブランチ", "main")
+    .option("--context <key=file...>", "Canvas に事前注入するファイル (例: requirements=./req.md)", collectContext, {})
+    .option("--skip-git", "ブランチ作成・コミット・プッシュをスキップし、プロジェクト直下で直接実行する", false)
     .action(async (name: string, opts) => {
       const projectPath = process.cwd();
       const spinner = ora(`Commission '${name}' を実行中...`).start();
@@ -139,35 +213,93 @@ export function createCommissionCommand(): Command {
       try {
         const mediumRegistry = await createMediumRegistry(projectPath);
         const eventBus = createEventBus();
+        const vcsPort = opts.skipGit ? createNoopVcsPort() : createVcsPort();
         const useCase = new CommissionRunUseCase(
           createConfigPort(),
-          createVcsPort(),
+          vcsPort,
           createLoggerPort(),
           mediumRegistry,
           eventBus,
         );
 
+        // --context オプションからファイルを読み込んで initialCanvas を構築
+        const initialCanvas: Record<string, string> = {};
+        const contextEntries = opts.context as Record<string, string>;
+        for (const [key, filePath] of Object.entries(contextEntries)) {
+          const resolvedPath = path.resolve(projectPath, filePath);
+          initialCanvas[key] = await readTextFile(resolvedPath);
+        }
+
         const result = await useCase.execute(name, projectPath, {
           dryRun: opts.dryRun,
           medium: opts.medium,
           tui: opts.tui,
+          initialCanvas: Object.keys(initialCanvas).length > 0 ? initialCanvas : undefined,
         });
 
         spinner.stop();
         printRunResult(result);
 
+        // worktree 情報を表示
+        const branchName = `atelier/${result.runId}`;
+        const safeName = branchName.replace(/\//g, "-");
+        const worktreePath = path.join(projectPath, ".atelier", "worktrees", safeName);
+
+        // worktree が実際に作成されたか確認
+        let worktreeCreated = false;
+        try {
+          const git = simpleGit(projectPath);
+          const isRepo = await git.checkIsRepo().catch(() => false);
+          if (isRepo) {
+            const worktreeList = await git.raw(["worktree", "list", "--porcelain"]);
+            worktreeCreated = worktreeList.includes(worktreePath);
+          }
+        } catch {
+          // 無視
+        }
+
+        if (worktreeCreated) {
+          console.log();
+          printInfo(`ブランチ: ${branchName}`);
+          printInfo(`Worktree: .atelier/worktrees/${safeName}`);
+          console.log();
+          printInfo("次のステップ:");
+          console.log(`    atelier branch merge ${branchName}   # メインにマージ`);
+          console.log(`    atelier branch delete ${branchName}  # 削除`);
+          console.log(`    atelier branch retry ${branchName}   # 再実行`);
+          console.log();
+        } else {
+          // worktree なし — 変更されたファイル一覧を表示
+          try {
+            const { execa } = await import("execa");
+            const gitResult = await execa("git", ["status", "--short"], { cwd: projectPath, reject: false });
+            if (gitResult.stdout.trim()) {
+              printInfo("変更されたファイル:");
+              console.log(gitResult.stdout);
+              console.log();
+            }
+          } catch {
+            // git が使えない場合は無視
+          }
+        }
+
         // --auto-pr: 実行成功時に自動で PR を作成
         if (opts.autoPr && result.status === "completed") {
           const prSpinner = ora("PR を作成中...").start();
           try {
-            const prAdapter = new GitHubPRAdapter();
+            const prAdapter = await createPRAdapter(projectPath);
             const prUseCase = new CreatePRUseCase(prAdapter, createLoggerPort());
             const pr = await prUseCase.execute(result, {
               base: opts.base,
               head: `atelier/${result.runId}`,
+              draft: opts.draft,
             });
             prSpinner.stop();
-            printSuccess(`PR #${pr.number} を作成しました`);
+            if (pr.skipped) {
+              printInfo(`既存の PR #${pr.number} があるためスキップしました`);
+            } else {
+              printSuccess(`PR #${pr.number} を作成しました`);
+            }
             printInfo(`URL: ${pr.url}`);
           } catch (prError) {
             prSpinner.fail("PR の作成に失敗しました");

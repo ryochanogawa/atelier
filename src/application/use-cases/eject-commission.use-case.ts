@@ -10,6 +10,8 @@ import {
   PALETTES_DIR,
   POLICIES_DIR,
   CONTRACTS_DIR,
+  INSTRUCTIONS_DIR,
+  KNOWLEDGE_DIR,
 } from "../../shared/constants.js";
 import {
   ensureDir,
@@ -23,6 +25,8 @@ import {
   getBuiltinPalettePath,
   getBuiltinPolicyPath,
   getBuiltinContractPath,
+  getBuiltinInstructionPath,
+  getBuiltinKnowledgePath,
   listBuiltinPalettes,
   listBuiltinPolicies,
 } from "../../builtin/index.js";
@@ -117,6 +121,54 @@ export class EjectCommissionUseCase {
           }
         } catch {
           // Policy のコピーに失敗しても続行
+        }
+      }
+    }
+
+    // 関連 Instruction, Knowledge, Contract をコピー
+    for (const stroke of strokes) {
+      // Instruction（ファイル参照の場合）
+      const instr = stroke.instruction as string | undefined;
+      if (instr && !instr.includes("\n") && instr.length <= 50) {
+        const instrSrc = getBuiltinInstructionPath(instr);
+        if (await fileExists(instrSrc)) {
+          await this.copyBuiltinFile(
+            instrSrc,
+            path.join(atelierPath, INSTRUCTIONS_DIR, `${instr}.md`),
+            copiedFiles,
+            skippedFiles,
+            options.force,
+          );
+        }
+      }
+
+      // Knowledge
+      const knowledgeList = (stroke.knowledge ?? []) as string[];
+      for (const k of knowledgeList) {
+        const kSrc = getBuiltinKnowledgePath(k);
+        if (await fileExists(kSrc)) {
+          await this.copyBuiltinFile(
+            kSrc,
+            path.join(atelierPath, KNOWLEDGE_DIR, `${k}.md`),
+            copiedFiles,
+            skippedFiles,
+            options.force,
+          );
+        }
+      }
+
+      // Contract
+      const contract = stroke.contract as string | undefined;
+      if (contract) {
+        const cSrc = getBuiltinContractPath(contract);
+        if (await fileExists(cSrc)) {
+          await this.copyBuiltinFile(
+            cSrc,
+            path.join(atelierPath, CONTRACTS_DIR, `${contract}.yaml`),
+            copiedFiles,
+            skippedFiles,
+            options.force,
+          );
         }
       }
     }

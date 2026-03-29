@@ -1,0 +1,79 @@
+name: security-review-output
+description: セキュリティレビューの出力フォーマット。セキュリティ監査結果を構造化する。
+
+format: |
+  ## 結果: APPROVE / REJECT
+
+  ## 深刻度: None / Low / Medium / High / Critical
+
+  ## チェック結果
+  | カテゴリ | 結果 | 備考 |
+  |---------|------|------|
+  | インジェクション | ✅ | - |
+  | 認証・認可 | ✅ | - |
+  | データ保護 | ✅ | - |
+  | 依存関係 | ✅ | - |
+
+  ## 今回のイテレーションでの発見（新規）
+  | # | finding_id | family_tag | 深刻度 | 種別 | 箇所 | 問題 | 修正提案 |
+  |---|------------|------------|--------|------|------|------|---------|
+  | 1 | SEC-NEW-src-db-L42 | injection-risk | High | SQLi | `src/db.ts:42` | 生のクエリ文字列 | パラメータ化クエリを使用 |
+
+  ## 持ち越しの発見（未解決）
+  | # | finding_id | family_tag | 前回のエビデンス | 今回のエビデンス | 問題 | 修正提案 |
+  |---|------------|------------|----------------|----------------|------|---------|
+
+  ## 解決済みの発見
+  | finding_id | 解決エビデンス |
+  |------------|--------------|
+
+  ## 再発した発見
+  | # | finding_id | family_tag | 以前の解決エビデンス | 再発エビデンス | 問題 | 修正提案 |
+  |---|------------|------------|-------------------|--------------|------|---------|
+
+  ## 警告（ブロックなし）
+  - {セキュリティ推奨事項}
+
+  ## リジェクト判定基準
+  - REJECT は `新規`、`未解決`、`再発` に1件以上の発見がある場合のみ有効
+  - `finding_id` のない発見は無効
+
+fields:
+  - name: verdict
+    type: enum
+    values: [approve, reject]
+    required: true
+    description: レビュー判定結果
+
+  - name: severity
+    type: enum
+    values: [none, low, medium, high, critical]
+    required: true
+    description: 全体の深刻度
+
+  - name: check_results
+    type: array
+    items:
+      category: string
+      result: enum[pass, fail]
+      notes: string
+    required: true
+    description: カテゴリ別チェック結果
+
+  - name: new_findings
+    type: array
+    items:
+      finding_id: string
+      family_tag: string
+      severity: enum[low, medium, high, critical]
+      type: string
+      location: string
+      issue: string
+      fix_suggestion: string
+    required: false
+    description: 新規発見事項
+
+  - name: warnings
+    type: array
+    required: false
+    description: 非ブロッキングの警告事項

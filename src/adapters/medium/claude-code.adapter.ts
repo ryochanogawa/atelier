@@ -1,7 +1,7 @@
 /**
  * Claude Code CLI アダプター
- * `claude --print --output-format json` を使用してClaude Codeを呼び出す。
- * プロンプトは stdin 経由で渡し、プロセス引数への露出を防止する。
+ * `claude --print` を使用してClaude Codeを呼び出す。
+ * プロバイダー共通インターフェースに準拠し、Claude固有のオプションは使用しない。
  */
 
 import { execa, type ResultPromise } from "execa";
@@ -11,6 +11,10 @@ import type {
   MediumRequest,
   MediumResponse,
 } from "./types.js";
+import { runSubprocess } from "../../infrastructure/process/subprocess.js";
+import fs from "node:fs/promises";
+import path from "node:path";
+import os from "node:os";
 
 export class ClaudeCodeAdapter implements MediumPort {
   readonly name = "claude-code";
@@ -32,6 +36,11 @@ export class ClaudeCodeAdapter implements MediumPort {
   }
 
   async execute(request: MediumRequest): Promise<MediumResponse> {
+    // 読み取りツールが要求されている場合は stdin パイプ + allowedTools 方式を使う
+    if (request.allowReadTools) {
+      return this.executeWithReadTools(request);
+    }
+
     const args = this.buildArgs(request);
     const startTime = Date.now();
 
@@ -64,6 +73,54 @@ export class ClaudeCodeAdapter implements MediumPort {
     }
   }
 
+  /**
+   * 読み取りツール (Read/Glob/Grep/Bash) を許可した実行。
+   * プロンプトを一時ファイルに書き出し、cat | claude -p --allowedTools ... で実行する。
+   */
+  private async executeWithReadTools(request: MediumRequest): Promise<MediumResponse> {
+    const startTime = Date.now();
+
+    // プロンプトを一時ファイルに書き出し
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "atelier-"));
+    const promptFile = path.join(tmpDir, "prompt.md");
+    await fs.writeFile(promptFile, request.prompt, "utf-8");
+
+    // コマンド引数の組み立て
+    const args: string[] = ["-p", "--dangerously-skip-permissions"];
+
+    // 読み取り専用ツール + WebSearch/WebFetch を許可
+    args.push("--allowedTools", "Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch");
+
+    if (request.systemPrompt) {
+      args.push("--system-prompt", request.systemPrompt);
+    }
+
+    if (request.extraArgs) {
+      args.push(...request.extraArgs);
+    }
+
+    const escapeShell = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
+    const shellCmd = `cat ${escapeShell(promptFile)} | claude ${args.map(escapeShell).join(" ")}`;
+
+    try {
+      const result = await runSubprocess("bash", ["-c", shellCmd], {
+        cwd: request.workingDirectory,
+        timeout: request.timeoutMs,
+      });
+
+      const durationMs = Date.now() - startTime;
+
+      return this.parseResponse(
+        result.stdout,
+        result.stderr,
+        result.exitCode,
+        durationMs,
+      );
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
   private buildArgs(request: MediumRequest): string[] {
     const args: string[] = ["--print"];
 
@@ -75,7 +132,6 @@ export class ClaudeCodeAdapter implements MediumPort {
       args.push(...request.extraArgs);
     }
 
-    // プロンプトは直接引数として渡す（stdinだとCLIがハングする場合がある）
     args.push(request.prompt);
 
     return args;
@@ -87,10 +143,9 @@ export class ClaudeCodeAdapter implements MediumPort {
     exitCode: number,
     durationMs: number,
   ): MediumResponse {
-    let content = "";
-    let structured: Record<string, unknown> | undefined;
-    let tokenUsage: { input: number; output: number } | undefined;
+    let content = stdout;
 
+    // JSON出力の場合はパースを試みる
     try {
       const parsed = JSON.parse(stdout) as Record<string, unknown>;
       content =
@@ -99,29 +154,13 @@ export class ClaudeCodeAdapter implements MediumPort {
           : typeof parsed.content === "string"
             ? parsed.content
             : stdout;
-      structured = parsed;
-
-      if (
-        parsed.usage &&
-        typeof parsed.usage === "object" &&
-        parsed.usage !== null
-      ) {
-        const usage = parsed.usage as Record<string, unknown>;
-        const input = Number(usage.input_tokens ?? usage.input ?? 0);
-        const output = Number(usage.output_tokens ?? usage.output ?? 0);
-        if (input > 0 || output > 0) {
-          tokenUsage = { input, output };
-        }
-      }
     } catch {
-      content = stdout;
+      // テキスト出力としてそのまま使用
     }
 
     return {
       content,
-      structured,
       durationMs,
-      tokenUsage,
       exitCode,
       rawStdout: stdout,
       rawStderr: stderr,

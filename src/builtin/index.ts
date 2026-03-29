@@ -19,13 +19,39 @@ const BUILTIN_PALETTES = [
   "reviewer",
   "security-reviewer",
   "designer",
+  "interviewer",
+  "requirements-analyst",
+  "risk-assessor",
+  "policy-checker",
+  "legacy-analyst",
+  "technical-writer",
+  "architect",
+  "devops",
+  "documentation-writer",
+  "performance-engineer",
+  "supervisor",
+  "conductor",
 ] as const;
 const BUILTIN_POLICIES = [
   "default-policy",
   "security-policy",
   "test-policy",
+  "review-policy",
+  "documentation-policy",
+  "architecture-policy",
+  "naming-policy",
+  "error-handling-policy",
+  "git-policy",
+  "performance-policy",
 ] as const;
-const BUILTIN_CONTRACTS = ["review-output"] as const;
+const BUILTIN_CONTRACTS = [
+  "review-output",
+  "plan-output",
+  "implementation-output",
+  "test-output",
+  "security-review-output",
+  "design-output",
+] as const;
 
 export type BuiltinCommissionName = (typeof BUILTIN_COMMISSIONS)[number];
 export type BuiltinPaletteName = (typeof BUILTIN_PALETTES)[number];
@@ -141,4 +167,18 @@ export function getBuiltinPolicyPath(name: string): string {
  */
 export function getBuiltinContractPath(name: string): string {
   return join(__dirname, "contracts", `${name}.yaml`);
+}
+
+/**
+ * ビルトイン Instruction の .md ファイルパスを返す。
+ */
+export function getBuiltinInstructionPath(name: string): string {
+  return join(__dirname, "instructions", `${name}.md`);
+}
+
+/**
+ * ビルトイン Knowledge の .md ファイルパスを返す。
+ */
+export function getBuiltinKnowledgePath(name: string): string {
+  return join(__dirname, "knowledge", `${name}.md`);
 }

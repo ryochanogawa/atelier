@@ -16,6 +16,8 @@ export interface MediumRequest {
   allowEdit: boolean;
   timeoutMs: number;
   extraArgs?: string[];
+  /** 読み取り専用ツール (Read/Glob/Grep) を許可するか */
+  allowReadTools?: boolean;
 }
 
 export interface MediumResponse {

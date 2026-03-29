@@ -10,6 +10,8 @@ import {
   PALETTES_DIR,
   POLICIES_DIR,
   CONTRACTS_DIR,
+  INSTRUCTIONS_DIR,
+  KNOWLEDGE_DIR,
   LOGS_DIR,
   STUDIO_CONFIG_FILE,
 } from "../../shared/constants.js";
@@ -44,6 +46,8 @@ export class StudioInitUseCase {
       PALETTES_DIR,
       POLICIES_DIR,
       CONTRACTS_DIR,
+      INSTRUCTIONS_DIR,
+      KNOWLEDGE_DIR,
       LOGS_DIR,
     ];
 
@@ -59,14 +63,14 @@ export class StudioInitUseCase {
     );
     filesCreated.push(studioConfigPath);
 
-    // サンプル Commission
-    const sampleCommissionPath = path.join(
+    // デフォルト Commission
+    const defaultCommissionPath = path.join(
       atelierPath,
       COMMISSIONS_DIR,
-      "sample.yaml",
+      "default.yaml",
     );
-    await writeTextFile(sampleCommissionPath, SAMPLE_COMMISSION_TEMPLATE);
-    filesCreated.push(sampleCommissionPath);
+    await writeTextFile(defaultCommissionPath, DEFAULT_COMMISSION_TEMPLATE);
+    filesCreated.push(defaultCommissionPath);
 
     // サンプル Palette
     const samplePalettePath = path.join(
@@ -96,15 +100,31 @@ media:
     args: ["--print", "--output-format", "json"]
 `;
 
-const SAMPLE_COMMISSION_TEMPLATE = `name: sample
-description: サンプルCommission
+const DEFAULT_COMMISSION_TEMPLATE = `name: default
+description: 設計・実装・テスト・レビューの標準ワークフロー
 
 strokes:
-  - name: implement
+  - name: plan
     palette: coder
     instruction: |
-      与えられた仕様に基づいてコードを実装してください。
-    inputs: []
+      要件を分析し、実装計画を策定してください。
+    inputs:
+      - requirements
+    outputs:
+      - implementation_plan
+    transitions:
+      - condition: default
+        next: implement
+
+  - name: implement
+    palette: coder
+    allow_edit: true
+    instruction: |
+      あなたはファイルを直接編集するエージェントです。
+      設計に基づき、Edit ツールと Write ツールを使ってファイルを実際に変更・作成してください。
+      テキストで計画や説明を述べるのではなく、必ずツールを使ってコードを書いてください。
+    inputs:
+      - implementation_plan
     outputs:
       - implementation
     transitions:

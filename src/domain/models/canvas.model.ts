@@ -32,6 +32,10 @@ export class Canvas {
     return this.store.delete(key);
   }
 
+  keys(): IterableIterator<string> {
+    return this.store.keys();
+  }
+
   entries(): IterableIterator<[string, unknown]> {
     return this.store.entries();
   }

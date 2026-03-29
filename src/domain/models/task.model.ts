@@ -76,6 +76,16 @@ export class TaskQueue {
     return this.tasks.find((t) => t.status === "queued");
   }
 
+  /** キュー内の次の N 個のタスクを取得する */
+  getNextN(n: number): Task[] {
+    const result: Task[] = [];
+    for (const t of this.tasks) {
+      if (result.length >= n) break;
+      if (t.status === "queued") result.push(t);
+    }
+    return result;
+  }
+
   /** タスクを running に遷移する */
   markRunning(id: string): void {
     const task = this.findById(id);

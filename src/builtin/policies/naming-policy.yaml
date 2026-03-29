@@ -1,0 +1,126 @@
+name: naming-policy
+description: 命名規約。変数、関数、クラス、ファイル、ディレクトリの命名基準。
+
+rules:
+  - name: general-naming-principles
+    description: 命名の基本原則
+    content: |
+      ## 原則
+      - 名前はそのものの目的・役割を正確に表現する
+      - 略語は避け、意味のある完全な単語を使用する
+      - 検索可能な名前を使用する（1文字変数は禁止、ループ変数を除く）
+      - スコープの広さに応じて名前の長さを調整する
+      - 文脈で明らかな情報は名前に含めない
+
+      ## 禁止パターン
+      | パターン | 例 | 問題点 |
+      |----------|-----|--------|
+      | 曖昧な名前 | data, info, temp, result | 何のデータか不明 |
+      | 過度な略語 | usr, mgr, ctx, cfg | 可読性の低下 |
+      | 型名の繰り返し | userObject, nameString | 冗長 |
+      | 番号付き変数 | data1, data2, handler3 | 意味不明 |
+      | 否定形のブール | isNotValid, hasNoError | 二重否定で混乱 |
+
+      ## 推奨パターン
+      | パターン | 例 | 理由 |
+      |----------|-----|------|
+      | 目的を表す名前 | authenticatedUser, validationErrors | 意図が明確 |
+      | 動詞+名詞 | fetchUserProfile, validateEmail | アクションが明確 |
+      | ブール変数 | isActive, hasPermission, canEdit | 真偽が明確 |
+
+  - name: case-conventions
+    description: ケース規約
+    content: |
+      ## TypeScript / JavaScript
+      | 対象 | ケース | 例 |
+      |------|--------|-----|
+      | 変数・関数 | camelCase | getUserById, totalCount |
+      | クラス・型・インターフェース | PascalCase | UserService, CreateUserInput |
+      | 定数（不変値） | UPPER_SNAKE_CASE | MAX_RETRY_COUNT, API_BASE_URL |
+      | 列挙型メンバー | PascalCase | Status.Active, Role.Admin |
+      | プライベートフィールド | _camelCase または #camelCase | _cache, #internalState |
+      | 型パラメータ | 単一大文字または説明的 PascalCase | T, TResult, TKey |
+
+      ## ファイル・ディレクトリ
+      | 対象 | ケース | 例 |
+      |------|--------|-----|
+      | ソースファイル | kebab-case | user-service.ts, create-user.ts |
+      | テストファイル | kebab-case + .test/.spec | user-service.test.ts |
+      | ディレクトリ | kebab-case | user-management/, api-handlers/ |
+      | React コンポーネント | PascalCase | UserProfile.tsx, LoginForm.tsx |
+      | 設定ファイル | kebab-case | eslint-config.js, tsconfig.json |
+
+  - name: function-naming
+    description: 関数・メソッドの命名規約
+    content: |
+      ## 命名パターン
+      | 種類 | プレフィックス | 例 |
+      |------|---------------|-----|
+      | データ取得 | get, fetch, find, load | getUserById, fetchOrders |
+      | データ作成 | create, build, generate | createUser, buildQuery |
+      | データ更新 | update, set, modify | updateProfile, setStatus |
+      | データ削除 | delete, remove, clear | deleteUser, removeItem |
+      | 検証 | validate, verify, check | validateEmail, verifyToken |
+      | 変換 | to, from, parse, format | toJSON, fromDTO, parseDate |
+      | 判定 | is, has, can, should | isValid, hasPermission |
+      | イベントハンドラ | handle, on | handleSubmit, onClick |
+
+      ## 禁止パターン
+      - process, do, execute のような曖昧な動詞（具体的に何をするか示す）
+      - 同一実装に異なる名前を付ける（DRY 違反）
+        例: copyFiles() と placeFiles() が同一実装 → 統合する
+
+  - name: class-naming
+    description: クラス・型の命名規約
+    content: |
+      ## 命名パターン
+      | 種類 | サフィックス | 例 |
+      |------|-------------|-----|
+      | サービス | Service | UserService, AuthService |
+      | リポジトリ | Repository | UserRepository |
+      | コントローラ | Controller | UserController |
+      | ファクトリ | Factory | ConnectionFactory |
+      | DTO | Request, Response, Input, Output | CreateUserRequest |
+      | エラー | Error | NotFoundError, ValidationError |
+      | イベント | Event | UserCreatedEvent |
+      | 設定 | Config, Options | DatabaseConfig |
+
+      ## 禁止パターン
+      - Manager, Handler, Processor, Helper のような曖昧なサフィックスの乱用
+      - Info, Data のような意味の薄いサフィックス
+      - Impl のようなサフィックス（インターフェースと実装の命名で区別する場合を除く）
+
+  - name: test-naming
+    description: テストの命名規約
+    content: |
+      ## テスト名
+      「何を」「どの条件で」「どうなるか」を明示する。
+
+      パターン: should {期待される振る舞い} when {条件}
+
+      ## 推奨例
+      ```typescript
+      test('should return NotFound error when user does not exist', ...)
+      test('should create user with hashed password when valid input is provided', ...)
+      test('should retry 3 times when API returns 503', ...)
+      ```
+
+      ## 禁止例
+      ```typescript
+      test('test1', ...)
+      test('it works', ...)
+      test('user test', ...)
+      test('should work correctly', ...)  // 「正しく」は曖昧
+      ```
+
+      ## describe ブロック
+      - テスト対象の関数名やクラス名を describe に指定する
+      - ネストした describe で条件をグルーピングする
+      ```typescript
+      describe('UserService', () => {
+        describe('createUser', () => {
+          test('should create user when valid input', ...)
+          test('should throw when email is duplicate', ...)
+        })
+      })
+      ```

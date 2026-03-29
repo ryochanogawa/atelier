@@ -33,11 +33,23 @@ export const PALETTES_DIR = "palettes";
 /** Policy ディレクトリ名 */
 export const POLICIES_DIR = "policies";
 
+/** Knowledge ディレクトリ名 */
+export const KNOWLEDGE_DIR = "knowledge";
+
 /** Contract ディレクトリ名 */
 export const CONTRACTS_DIR = "contracts";
 
+/** Instruction ディレクトリ名 */
+export const INSTRUCTIONS_DIR = "instructions";
+
 /** ログディレクトリ名 */
 export const LOGS_DIR = "logs";
+
+/** 要件定義ディレクトリ名 */
+export const REQUIREMENTS_DIR = "requirements";
+
+/** セッションディレクトリ名 */
+export const SESSIONS_DIR = "sessions";
 
 /** CLI バージョン */
 export const CLI_VERSION = "0.1.0";

@@ -1,0 +1,130 @@
+name: performance-policy
+description: パフォーマンス規約。バンドルサイズ、レンダリング、メモリ使用量の基準。
+
+rules:
+  - name: performance-principles
+    description: パフォーマンスの基本原則
+    content: |
+      ## 原則
+      - 計測してから最適化する。推測で最適化しない
+      - ユーザー体験に影響するパフォーマンスを優先する
+      - 可読性を犠牲にした最適化は最終手段とする
+      - パフォーマンスの劣化は機能バグと同等に扱う
+
+      ## 判定基準
+      | 状況 | 判定 |
+      |------|------|
+      | 計測なしの推測による最適化 | REJECT |
+      | 可読性を著しく損なう早期最適化 | REJECT |
+      | O(n^2) 以上の計算量（データサイズが大きい場合） | REJECT |
+      | 不要な再レンダリングの放置 | Warning |
+      | 計測データに基づく最適化 | OK |
+
+  - name: bundle-size-standards
+    description: バンドルサイズ基準
+    content: |
+      ## 目標値
+      | 対象 | 目標 | 上限 |
+      |------|------|------|
+      | 初期ロード JS | 100KB (gzip) | 200KB (gzip) |
+      | 個別ルートチャンク | 50KB (gzip) | 100KB (gzip) |
+      | CSS | 30KB (gzip) | 50KB (gzip) |
+      | 画像（個別） | 200KB | 500KB |
+
+      ## 対策
+      - コード分割（ルートベースの遅延読み込み）
+      - Tree Shaking の活用（名前付きエクスポートを使用）
+      - 大型ライブラリの代替検討（例: moment.js → date-fns）
+      - 未使用コード・依存の除去
+      - 動的 import の活用
+
+      ## 禁止パターン
+      - バンドルサイズの影響を考慮しないライブラリ追加
+      - ライブラリ全体の import（例: import _ from 'lodash'）
+      - 同等機能の複数ライブラリ併用（例: moment + date-fns）
+
+  - name: rendering-performance
+    description: レンダリングパフォーマンス基準
+    content: |
+      ## 目標値
+      | 指標 | 目標 | 上限 |
+      |------|------|------|
+      | FCP (First Contentful Paint) | 1.5秒 | 3.0秒 |
+      | LCP (Largest Contentful Paint) | 2.0秒 | 4.0秒 |
+      | CLS (Cumulative Layout Shift) | 0.05 | 0.1 |
+      | INP (Interaction to Next Paint) | 100ms | 200ms |
+      | FPS (アニメーション) | 60fps | 30fps |
+
+      ## React 固有の対策
+      - 不要な再レンダリングの防止（React.memo, useMemo, useCallback）
+      - 状態を使用箇所に限定する（グローバルな状態管理を避ける）
+      - 仮想化リストの使用（大量データの表示）
+      - Suspense と遅延読み込みの活用
+
+      ## 禁止パターン
+      - レンダリング中の重い計算（useMemo なしの O(n^2) 処理）
+      - 無限レンダリングループ（useEffect の依存配列の不備）
+      - 巨大なコンポーネントツリーの一括レンダリング
+      - Layout Thrashing（DOM の読み取りと書き込みの交互実行）
+
+  - name: memory-management
+    description: メモリ管理基準
+    content: |
+      ## メモリリークの防止
+      | パターン | 対策 |
+      |----------|------|
+      | イベントリスナーの未解除 | useEffect のクリーンアップで解除 |
+      | タイマーの未クリア | setInterval/setTimeout のクリア |
+      | 購読の未解除 | Observable/EventEmitter の unsubscribe |
+      | クロージャによる参照保持 | WeakRef, WeakMap の活用 |
+      | キャッシュの際限ない増加 | LRU キャッシュ、TTL の設定 |
+
+      ## 判定基準
+      | 状況 | 判定 |
+      |------|------|
+      | イベントリスナー/タイマーのクリーンアップ漏れ | REJECT |
+      | 際限のないキャッシュ増加 | REJECT |
+      | 大量データの丸ごとメモリ保持 | Warning |
+      | ストリーム処理の未活用（大量データ処理時） | Warning |
+
+  - name: api-performance
+    description: API パフォーマンス基準
+    content: |
+      ## 目標値
+      | 指標 | 目標 | 上限 |
+      |------|------|------|
+      | API レスポンスタイム (P50) | 100ms | 300ms |
+      | API レスポンスタイム (P99) | 500ms | 2000ms |
+      | DB クエリ実行時間 | 50ms | 200ms |
+      | 同時接続数 | 1000 | 5000 |
+
+      ## 対策
+      - N+1 クエリの解消（JOIN, バッチ取得）
+      - 適切なインデックスの設計
+      - キャッシュの活用（Redis, CDN）
+      - ページネーション/カーソルベースの取得
+      - 非同期処理の活用（ジョブキュー）
+
+      ## 禁止パターン
+      - N+1 クエリの放置
+      - SELECT * の使用（必要なカラムのみ取得する）
+      - ページネーションなしの全件取得
+      - 同期処理での外部 API 呼び出し（非同期で行う）
+      - トランザクション内での外部 API 呼び出し
+
+  - name: algorithm-complexity
+    description: アルゴリズム計算量の基準
+    content: |
+      ## 計算量の目安
+      | データサイズ | 許容計算量 | 例 |
+      |-------------|-----------|-----|
+      | n < 100 | O(n^2) まで許容 | 小規模データのソート |
+      | 100 < n < 10,000 | O(n log n) 以下 | 中規模リストの操作 |
+      | n > 10,000 | O(n) 以下を目標 | 大規模データのフィルタリング |
+      | n > 100,000 | O(n) 必須、ストリーム処理検討 | ログ解析、バッチ処理 |
+
+      ## 注意パターン
+      - ループ内のループ（特にデータサイズが不定の場合）
+      - 配列の find/filter のネスト（Map/Set への変換を検討）
+      - 文字列の繰り返し結合（StringBuilder/join の使用）
+      - 再帰の深さ制限（スタックオーバーフロー防止）

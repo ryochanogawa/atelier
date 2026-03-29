@@ -1,95 +1,800 @@
 /**
  * Interactive Commands
  * atelier talk - 対話モードでAIと会話し、タスクをキューに追加する。
+ *
+ * takt と同等の Interactive Mode:
+ * /go [追加指示]  - 対話要約 → Commission 選択 → 実行
+ * /play <タスク>  - 即座にタスクを default Commission で実行
+ * /resume         - 過去のセッション履歴を復元
+ * /requirements   - 構造化要件定義モード
+ * /analyze        - 会話から要件を自動抽出
+ * /save           - 会話内容を要件定義書として保存
+ * /implement [name] - 要件定義を元にCommissionを実行
+ * /suggest        - Commission/Palette提案
+ * /exit           - 終了時アクション選択
  */
 
 import { Command } from "commander";
 import readline from "node:readline";
+import path from "node:path";
 import chalk from "chalk";
 import ora from "ora";
+import { parse as parseYaml } from "yaml";
 import { InteractiveSessionUseCase } from "../../application/use-cases/interactive-session.use-case.js";
 import { ClaudeCodeAdapter } from "../../adapters/medium/claude-code.adapter.js";
 import { RequirementsAnalyzerService } from "../../domain/services/requirements-analyzer.service.js";
 import { IntentEnhancerService } from "../../domain/services/intent-enhancer.service.js";
-import { printSuccess, printError, printWarning, printInfo, printTable } from "../output.js";
+import { RequirementsStoreAdapter } from "../../adapters/config/requirements-store.adapter.js";
+import { resolveAtelierPath } from "../../shared/utils.js";
+import { REQUIREMENTS_DIR, COMMISSIONS_DIR } from "../../shared/constants.js";
+import { writeTextFile, readTextFile, listFiles } from "../../infrastructure/fs/file-system.js";
+import { CommissionRunUseCase } from "../../application/use-cases/run-commission.use-case.js";
+import { listBuiltinCommissions } from "../../builtin/index.js";
+import { createEventBus } from "../../infrastructure/event-bus/event-emitter.js";
+import { printSuccess, printError, printWarning, printInfo, printTable, printRunResult } from "../output.js";
 
-/**
- * 対話ループを開始する。
- */
-async function startInteractiveLoop(
-  session: InteractiveSessionUseCase,
-): Promise<void> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
+// ── helpers ──────────────────────────────────────────────
 
-  console.log();
-  console.log(chalk.bold("ATELIER Interactive Mode"));
-  console.log(chalk.dim("─".repeat(50)));
-  console.log(chalk.dim("対話モードを開始しました。AIに質問や指示を入力してください。"));
-  console.log(chalk.dim("特殊コマンド:"));
-  console.log(chalk.dim("  /queue <description> - タスクをキューに追加"));
-  console.log(chalk.dim("  /run               - キュー内の全タスクを実行"));
-  console.log(chalk.dim("  /list              - キュー内タスク一覧"));
-  console.log(chalk.dim("  /requirements      - 構造化要件定義モード"));
-  console.log(chalk.dim("  /analyze           - 会話から要件を自動抽出"));
-  console.log(chalk.dim("  /suggest           - Commission/Palette提案"));
-  console.log(chalk.dim("  /exit              - 終了"));
-  console.log(chalk.dim("─".repeat(50)));
-  console.log();
-
-  const prompt = (): Promise<string> => {
-    return new Promise((resolve) => {
-      rl.question(chalk.cyan("you > "), (answer) => {
-        resolve(answer);
-      });
+/** readline で1行入力を取得する */
+function promptLine(promptText: string): Promise<string> {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+      terminal: true,
     });
+    rl.question(promptText, (answer) => {
+      rl.close();
+      resolve(answer);
+    });
+  });
+}
+
+/** Commission 一覧を取得する（プロジェクト固有 + ビルトイン） */
+async function listAvailableCommissions(projectPath: string): Promise<{ name: string; description: string; source: string }[]> {
+  const result: { name: string; description: string; source: string }[] = [];
+
+  // プロジェクト固有の commission
+  const commissionsDir = path.join(resolveAtelierPath(projectPath), COMMISSIONS_DIR);
+  try {
+    const files = await listFiles(commissionsDir, ".yaml");
+    for (const file of files) {
+      try {
+        const content = await readTextFile(file);
+        const parsed = parseYaml(content) as Record<string, unknown>;
+        const name = (parsed.name as string) ?? path.basename(file, ".yaml");
+        const desc = (parsed.description as string) ?? "-";
+        result.push({ name, description: desc, source: "project" });
+      } catch {
+        // 壊れたファイルはスキップ
+      }
+    }
+  } catch {
+    // ディレクトリがない場合は無視
+  }
+
+  // ビルトイン commission（プロジェクト固有で上書きされていないもの）
+  const projectNames = new Set(result.map((c) => c.name));
+  const builtinNames = listBuiltinCommissions();
+  for (const name of builtinNames) {
+    if (!projectNames.has(name)) {
+      result.push({ name, description: `(builtin) ${name}`, source: "builtin" });
+    }
+  }
+
+  return result;
+}
+
+/** Commission 選択UI */
+async function selectCommission(projectPath: string): Promise<string | null> {
+  const commissions = await listAvailableCommissions(projectPath);
+
+  console.log();
+  console.log(chalk.bold("Commission を選択してください:"));
+  console.log();
+  commissions.forEach((c, i) => {
+    const tag = c.source === "builtin" ? chalk.dim(" (builtin)") : "";
+    console.log(`  ${chalk.cyan(String(i + 1))}. ${chalk.bold(c.name)}${tag} ${chalk.dim("—")} ${c.description}`);
+  });
+  console.log(`  ${chalk.cyan(String(commissions.length + 1))}. ${chalk.dim("(直接実行)")} ${chalk.dim("—")} Commission なしで直接AIに渡す`);
+  console.log(`  ${chalk.cyan("0")}. ${chalk.dim("キャンセル")}`);
+  console.log();
+
+  const answer = await promptLine(chalk.cyan("> "));
+  const num = parseInt(answer.trim(), 10);
+
+  if (num === 0 || isNaN(num)) {
+    return null;
+  }
+
+  if (num === commissions.length + 1) {
+    return "__direct__";
+  }
+
+  if (num >= 1 && num <= commissions.length) {
+    return commissions[num - 1]!.name;
+  }
+
+  printWarning("無効な選択です。");
+  return null;
+}
+
+/** 対話終了時のアクション選択 */
+async function selectExitAction(): Promise<"go" | "save_task" | "save_requirements" | "exit"> {
+  console.log();
+  console.log(chalk.bold("次のアクションを選択してください:"));
+  console.log();
+  console.log(`  ${chalk.cyan("1")}. ${chalk.bold("実行する")} ${chalk.dim("—")} 会話を要約して Commission を実行`);
+  console.log(`  ${chalk.cyan("2")}. ${chalk.bold("タスクとして保存")} ${chalk.dim("—")} タスクキューに追加`);
+  console.log(`  ${chalk.cyan("3")}. ${chalk.bold("要件定義書として保存")} ${chalk.dim("—")} Markdown ファイルに保存`);
+  console.log(`  ${chalk.cyan("4")}. ${chalk.bold("終了")} ${chalk.dim("—")} 何もせず終了`);
+  console.log();
+
+  const answer = await promptLine(chalk.cyan("> "));
+  const num = parseInt(answer.trim(), 10);
+
+  switch (num) {
+    case 1: return "go";
+    case 2: return "save_task";
+    case 3: return "save_requirements";
+    default: return "exit";
+  }
+}
+
+// ── Commission 実行インフラ構築 ──────────────────────────
+
+async function buildCommissionInfra(projectPath: string) {
+  const { readTextFile: readText } = await import("../../infrastructure/fs/file-system.js");
+  const { STUDIO_CONFIG_FILE } = await import("../../shared/constants.js");
+  const { simpleGit } = await import("simple-git");
+
+  const configPort = {
+    async loadStudioConfig(pp: string) {
+      const content = await readText(path.join(resolveAtelierPath(pp), STUDIO_CONFIG_FILE));
+      const parsed = parseYaml(content) as Record<string, unknown>;
+      const studio = parsed.studio as Record<string, unknown>;
+      return {
+        defaultMedium: (studio?.default_medium as string) ?? "claude-code",
+        language: (studio?.language as string) ?? "ja",
+        logLevel: (studio?.log_level as "info") ?? "info",
+      };
+    },
+    async loadMediaConfig(pp: string) {
+      const content = await readText(path.join(resolveAtelierPath(pp), STUDIO_CONFIG_FILE));
+      const parsed = parseYaml(content) as Record<string, unknown>;
+      const media = (parsed.media ?? {}) as Record<string, Record<string, unknown>>;
+      const result: Record<string, { command: string; args: string[] }> = {};
+      for (const [n, c] of Object.entries(media)) {
+        result[n] = { command: (c.command as string) ?? n, args: (c.args as string[]) ?? [] };
+      }
+      return result;
+    },
   };
 
-  let running = true;
+  const mediaConfig = await configPort.loadMediaConfig(projectPath);
+  const mediumRegistry = {
+    getCommand(mediumName: string) {
+      const c = mediaConfig[mediumName];
+      return c ? { command: c.command, args: c.args as readonly string[] } : undefined;
+    },
+    listMedia() { return Object.keys(mediaConfig); },
+  };
 
-  while (running) {
-    const input = await prompt();
-    const trimmed = input.trim();
+  const vcsPort = {
+    async createWorktree(basePath: string, branchName: string) {
+      const git = simpleGit(basePath);
+      const isRepo = await git.checkIsRepo().catch(() => false);
+      if (!isRepo) return basePath;
 
-    if (!trimmed) continue;
-
-    // 特殊コマンドの処理
-    if (trimmed.startsWith("/")) {
-      const handled = await handleSpecialCommand(trimmed, session);
-      if (handled === "exit") {
-        running = false;
-        continue;
+      const currentBranch = (await git.revparse(["--abbrev-ref", "HEAD"])).trim();
+      const branches = await git.branchLocal();
+      if (!branches.all.includes(branchName)) {
+        await git.checkoutLocalBranch(branchName);
+        await git.checkout(currentBranch);
       }
-      if (handled) continue;
-    }
 
-    // 通常のメッセージをAIに送信
-    const spinner = ora({ text: "考え中...", color: "cyan" }).start();
+      const safeName = branchName.replace(/\//g, "-");
+      const worktreePath = path.join(basePath, ".atelier", "worktrees", safeName);
+
+      try {
+        const worktreeList = await git.raw(["worktree", "list", "--porcelain"]);
+        if (worktreeList.includes(worktreePath)) return worktreePath;
+      } catch { /* ignore */ }
+
+      await git.raw(["worktree", "add", worktreePath, branchName]);
+      return worktreePath;
+    },
+    async removeWorktree(_w: string) {
+      // worktree を保持する
+    },
+    async commitAll(cwd: string, message: string) {
+      const git = simpleGit(cwd);
+      const isRepo = await git.checkIsRepo().catch(() => false);
+      if (!isRepo) return;
+      const status = await git.status();
+      if (status.files.length === 0) return;
+      await git.add("-A");
+      await git.commit(message);
+    },
+  };
+
+  const loggerPort = {
+    info: () => {},
+    warn: () => {},
+    error: (msg: string) => console.error(`[ERROR] ${msg}`),
+    debug: () => {},
+  };
+
+  return { configPort, mediumRegistry, vcsPort, loggerPort };
+}
+
+/** Commission を実行して結果を表示する */
+async function executeCommission(
+  projectPath: string,
+  commissionName: string,
+  requirements: string,
+): Promise<void> {
+  const { configPort, mediumRegistry, vcsPort, loggerPort } = await buildCommissionInfra(projectPath);
+  const eventBus = createEventBus();
+  const useCase = new CommissionRunUseCase(configPort, vcsPort, loggerPort, mediumRegistry, eventBus);
+
+  const execSpinner = ora({ text: `Commission '${commissionName}' を実行中...`, color: "cyan" }).start();
+
+  try {
+    const result = await useCase.execute(commissionName, projectPath, {
+      dryRun: false,
+      initialCanvas: { requirements },
+    });
+
+    execSpinner.stop();
+    printRunResult(result);
+
+    // worktree 情報を表示
+    const branchName = `atelier/${result.runId}`;
+    const safeName = branchName.replace(/\//g, "-");
+    const worktreePath = path.join(projectPath, ".atelier", "worktrees", safeName);
+
+    let worktreeCreated = false;
     try {
-      const response = await session.sendMessage(trimmed);
-      spinner.stop();
+      const { simpleGit } = await import("simple-git");
+      const git = simpleGit(projectPath);
+      const isRepo = await git.checkIsRepo().catch(() => false);
+      if (isRepo) {
+        const worktreeList = await git.raw(["worktree", "list", "--porcelain"]);
+        worktreeCreated = worktreeList.includes(worktreePath);
+      }
+    } catch { /* ignore */ }
+
+    if (worktreeCreated) {
+      console.log();
+      printInfo(`ブランチ: ${branchName}`);
+      printInfo(`Worktree: .atelier/worktrees/${safeName}`);
+      console.log();
+      printInfo("次のステップ:");
+      console.log(`    atelier branch merge ${branchName}     # メインにマージ`);
+      console.log(`    atelier branch delete ${branchName}    # 削除`);
+      console.log(`    atelier branch instruct ${branchName}  # 追加指示`);
+      console.log();
+    } else {
+      try {
+        const { execa } = await import("execa");
+        const gitResult = await execa("git", ["status", "--short"], { cwd: projectPath, reject: false });
+        if (gitResult.stdout.trim()) {
+          printInfo("変更されたファイル:");
+          console.log(gitResult.stdout);
+          console.log();
+        } else {
+          printWarning("ファイルの変更はありませんでした。");
+          console.log();
+        }
+      } catch { /* ignore */ }
+    }
+  } catch (error) {
+    execSpinner.fail("Commission の実行に失敗しました");
+    printError(error instanceof Error ? error.message : String(error));
+    console.log();
+  }
+}
+
+// ── /go コマンド: 対話要約 → Commission 選択 → 実行 ──────
+
+async function handleGoCommand(
+  session: InteractiveSessionUseCase,
+  additionalNote?: string,
+): Promise<void> {
+  const history = session.getHistory();
+
+  if (history.length === 0) {
+    printWarning("会話履歴がありません。先にAIと会話してください。");
+    console.log();
+    return;
+  }
+
+  // Step 1: AIに会話を要約させてタスク文字列を生成
+  const spinner = ora({ text: "タスク指示書を生成中...", color: "cyan" }).start();
+
+  let taskText: string;
+  try {
+    taskText = await session.summarizeForTask(additionalNote);
+    spinner.stop();
+
+    console.log();
+    console.log(chalk.bold.blue("--- 生成されたタスク指示書 ---"));
+    console.log();
+    console.log(chalk.green("ai > ") + taskText);
+    console.log();
+  } catch (error) {
+    spinner.fail("タスク指示書の生成に失敗しました");
+    printError(error instanceof Error ? error.message : String(error));
+    return;
+  }
+
+  // Step 2: Commission 選択UI
+  const projectPath = process.cwd();
+  const selectedCommission = await selectCommission(projectPath);
+
+  if (selectedCommission === null) {
+    printInfo("キャンセルしました。");
+    console.log();
+    return;
+  }
+
+  // Step 3: 要件定義をファイルに保存
+  const now = new Date();
+  const date = now.toISOString().slice(0, 10);
+  const time = now.toISOString().slice(11, 19).replace(/:/g, "");
+  const filename = `${date}_${time}_requirements.md`;
+  const reqDir = path.join(resolveAtelierPath(projectPath), REQUIREMENTS_DIR);
+  const reqPath = path.join(reqDir, filename);
+
+  try {
+    await writeTextFile(reqPath, taskText);
+    printSuccess(`タスク指示書を保存: ${reqPath}`);
+  } catch (error) {
+    printError(`保存に失敗: ${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
+
+  // Step 4: 直接実行の場合はAIに直接渡す（Commission なし）
+  if (selectedCommission === "__direct__") {
+    printInfo("AIに直接タスクを渡して実行します...");
+    const directSpinner = ora({ text: "実行中...", color: "cyan" }).start();
+    try {
+      const response = await session.sendMessage(
+        `以下のタスクを実行してください:\n\n${taskText}`,
+      );
+      directSpinner.stop();
       console.log();
       console.log(chalk.green("ai > ") + response);
       console.log();
     } catch (error) {
-      spinner.fail("応答の取得に失敗しました");
-      printError(
-        error instanceof Error ? error.message : String(error),
-      );
-      console.log();
+      directSpinner.fail("実行に失敗しました");
+      printError(error instanceof Error ? error.message : String(error));
     }
+    return;
   }
 
-  rl.close();
-  console.log(chalk.dim("対話モードを終了しました。"));
+  // Step 5: Commission を実行
+  await executeCommission(projectPath, selectedCommission, taskText);
 }
 
-/**
- * 特殊コマンドを処理する。
- * @returns "exit" で終了、true で処理済み、false で未処理。
- */
+// ── /play コマンド: 即座にタスク実行 ──────────────────────
+
+async function handlePlayCommand(
+  taskDescription: string,
+): Promise<void> {
+  if (!taskDescription.trim()) {
+    printWarning("タスク説明を入力してください: /play <タスク説明>");
+    console.log();
+    return;
+  }
+
+  const projectPath = process.cwd();
+
+  printInfo(`default Commission でタスクを実行します: ${taskDescription.slice(0, 80)}...`);
+  console.log();
+
+  await executeCommission(projectPath, "default", taskDescription);
+}
+
+// ── /resume コマンド: 過去のセッション履歴を復元 ──────────
+
+async function handleResumeCommand(
+  session: InteractiveSessionUseCase,
+): Promise<void> {
+  const projectPath = process.cwd();
+
+  const sessions = await InteractiveSessionUseCase.listSessions(projectPath);
+
+  if (sessions.length === 0) {
+    printWarning("保存されたセッションがありません。");
+    console.log();
+    return;
+  }
+
+  console.log();
+  console.log(chalk.bold("セッションを選択してください:"));
+  console.log();
+
+  const maxDisplay = Math.min(sessions.length, 10);
+  for (let i = 0; i < maxDisplay; i++) {
+    const s = sessions[i]!;
+    const messageCount = s.messages.length;
+    const firstMsg = s.messages[0]?.content.slice(0, 60) ?? "(空)";
+    const date = s.updatedAt.slice(0, 19).replace("T", " ");
+    console.log(`  ${chalk.cyan(String(i + 1))}. ${chalk.dim(date)} ${chalk.dim(`(${messageCount}件)`)} ${firstMsg}...`);
+  }
+  console.log(`  ${chalk.cyan("0")}. キャンセル`);
+  console.log();
+
+  const answer = await promptLine(chalk.cyan("> "));
+  const num = parseInt(answer.trim(), 10);
+
+  if (num === 0 || isNaN(num) || num > maxDisplay) {
+    printInfo("キャンセルしました。");
+    return;
+  }
+
+  const selected = sessions[num - 1]!;
+  session.restoreHistory(selected.messages);
+
+  printSuccess(`セッション (${selected.id}) を復元しました。(${selected.messages.length}件の会話)`);
+  console.log();
+
+  // 直近の会話を表示
+  const recentMessages = selected.messages.slice(-4);
+  for (const msg of recentMessages) {
+    const prefix = msg.role === "user" ? chalk.cyan("you > ") : chalk.green("ai > ");
+    const content = msg.content.length > 200 ? msg.content.slice(0, 200) + "..." : msg.content;
+    console.log(prefix + content);
+    console.log();
+  }
+}
+
+// ── 既存コマンド: /requirements ──────────────────────────
+
+async function handleRequirementsMode(
+  session: InteractiveSessionUseCase,
+): Promise<void> {
+  console.log();
+  console.log(chalk.bold.blue("--- 構造化要件定義モード ---"));
+  console.log(chalk.dim("AIが質問形式で要件をヒアリングします。"));
+  console.log(chalk.dim("回答を入力してください。「/done」で要件を確定します。"));
+  console.log();
+
+  const interviewPrompt = [
+    "あなたは要件ヒアリングの専門家です。",
+    "ユーザーに対して段階的に質問を行い、要件を引き出してください。",
+    "まず最初に、プロジェクトの目的とゴールについて2-3個の質問をしてください。",
+    "質問は日本語で、分かりやすく簡潔に行ってください。",
+  ].join("\n");
+
+  const spinner = ora({ text: "質問を準備中...", color: "cyan" }).start();
+  try {
+    const response = await session.sendMessage(interviewPrompt);
+    spinner.stop();
+    console.log(chalk.green("ai > ") + response);
+    console.log();
+    printInfo("回答を入力してください。要件定義が完了したら /done と入力してください。");
+    console.log();
+  } catch (error) {
+    spinner.fail("質問の準備に失敗しました");
+    printError(error instanceof Error ? error.message : String(error));
+  }
+}
+
+// ── 既存コマンド: /analyze ────────────────────────────────
+
+async function handleAnalyzeConversation(
+  session: InteractiveSessionUseCase,
+): Promise<void> {
+  const history = session.getHistory();
+
+  if (history.length === 0) {
+    printWarning("会話履歴がありません。先にAIと会話してください。");
+    console.log();
+    return;
+  }
+
+  const allMessages = history
+    .map((msg) => msg.content)
+    .join("\n");
+
+  const analyzer = new RequirementsAnalyzerService();
+  const doc = analyzer.analyzeRequirements(allMessages);
+
+  console.log();
+  console.log(chalk.bold.blue(`--- 要件分析結果: ${doc.title} ---`));
+  console.log();
+
+  if (doc.functional.length > 0) {
+    printSuccess(`機能要件 (${doc.functional.length}件):`);
+    const funcRows = doc.functional.map((r) => [
+      r.id,
+      r.description.slice(0, 60),
+      r.priority.toUpperCase(),
+      r.category,
+    ]);
+    printTable(["ID", "Description", "Priority", "Category"], funcRows);
+    console.log();
+  }
+
+  if (doc.nonFunctional.length > 0) {
+    printSuccess(`非機能要件 (${doc.nonFunctional.length}件):`);
+    const nfRows = doc.nonFunctional.map((r) => [
+      r.id,
+      r.description.slice(0, 60),
+      r.priority.toUpperCase(),
+      r.category,
+    ]);
+    printTable(["ID", "Description", "Priority", "Category"], nfRows);
+    console.log();
+  }
+
+  const allReqs = [...doc.functional, ...doc.nonFunctional];
+  const contradictions = analyzer.detectContradictions(allReqs);
+  if (contradictions.length > 0) {
+    printWarning(`矛盾検出 (${contradictions.length}件):`);
+    for (const c of contradictions) {
+      const icon = c.severity === "error" ? chalk.red("[ERROR]") : chalk.yellow("[WARN]");
+      console.log(`  ${icon} ${c.requirementIds.join(" <-> ")}: ${c.reason}`);
+    }
+    console.log();
+  }
+
+  const gaps = analyzer.detectGaps(allReqs);
+  if (gaps.length > 0) {
+    printWarning(`抜け漏れ検出 (${gaps.length}件):`);
+    for (const g of gaps) {
+      console.log(`  ${chalk.yellow("-")} [${g.category}] ${g.description}`);
+      console.log(`    ${chalk.dim("提案: " + g.suggestion)}`);
+    }
+    console.log();
+  }
+
+  const checklist = analyzer.generateChecklist(allReqs);
+  printInfo(`確認チェックリスト (${checklist.items.length}件):`);
+  for (const item of checklist.items) {
+    const mark = item.required ? chalk.red("*") : chalk.dim("o");
+    console.log(`  ${mark} [${item.category}] ${item.question}`);
+  }
+  console.log();
+
+  if (doc.assumptions.length > 0) {
+    printInfo("前提条件:");
+    for (const a of doc.assumptions) {
+      console.log(`  - ${a}`);
+    }
+    console.log();
+  }
+
+  if (doc.openQuestions.length > 0) {
+    printInfo("未確定事項:");
+    for (const q of doc.openQuestions) {
+      console.log(`  ? ${q}`);
+    }
+    console.log();
+  }
+
+  try {
+    const store = new RequirementsStoreAdapter(process.cwd());
+    const savedPath = await store.save({
+      document: doc,
+      contradictions,
+      gaps,
+      checklist,
+    });
+    printSuccess(`要件定義書を保存しました: ${savedPath}`);
+    console.log();
+  } catch (error) {
+    printError(
+      `保存に失敗しました: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    console.log();
+  }
+}
+
+// ── 既存コマンド: /implement ──────────────────────────────
+
+async function handleImplement(
+  session: InteractiveSessionUseCase,
+  commissionName: string,
+): Promise<void> {
+  const history = session.getHistory();
+
+  if (history.length === 0) {
+    printWarning("会話履歴がありません。先にAIと要件を話し合ってください。");
+    console.log();
+    return;
+  }
+
+  // Step 1: AIに要件定義をまとめさせる
+  const spinner = ora({ text: "要件定義を生成中...", color: "cyan" }).start();
+
+  let requirements: string;
+  try {
+    const summarizePrompt = [
+      "これまでの会話内容を元に、実装に必要な要件定義を簡潔にまとめてください。",
+      "以下の構成で出力してください:",
+      "",
+      "## 概要",
+      "## 実装すべき機能（優先度順）",
+      "## 技術的な制約・方針",
+      "## 受け入れ基準",
+      "",
+      "Markdown形式で、装飾的な説明は省いて本文のみ出力してください。",
+    ].join("\n");
+
+    requirements = await session.sendMessage(summarizePrompt);
+    spinner.stop();
+
+    console.log();
+    console.log(chalk.green("ai > ") + requirements);
+    console.log();
+  } catch (error) {
+    spinner.fail("要件定義の生成に失敗しました");
+    printError(error instanceof Error ? error.message : String(error));
+    return;
+  }
+
+  // Step 2: 要件定義をファイルに保存
+  const projectPath = process.cwd();
+  const now = new Date();
+  const date = now.toISOString().slice(0, 10);
+  const time = now.toISOString().slice(11, 19).replace(/:/g, "");
+  const filename = `${date}_${time}_requirements.md`;
+  const reqDir = path.join(resolveAtelierPath(projectPath), REQUIREMENTS_DIR);
+  const reqPath = path.join(reqDir, filename);
+
+  try {
+    await writeTextFile(reqPath, requirements);
+    printSuccess(`要件定義書を保存: ${reqPath}`);
+  } catch (error) {
+    printError(`保存に失敗: ${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
+
+  // Step 3: 確認プロンプト
+  console.log();
+  printInfo(`Commission '${commissionName}' を実行して実装に進みます。`);
+
+  const answer = await promptLine(chalk.cyan("実行しますか？ (y/n) > "));
+
+  if (answer.trim().toLowerCase() !== "y" && answer.trim().toLowerCase() !== "yes") {
+    printInfo("キャンセルしました。要件定義書は保存済みです。");
+    printInfo(`後から実行: atelier commission run ${commissionName} --context requirements=${reqPath}`);
+    console.log();
+    return;
+  }
+
+  // Step 4: Commission を実行
+  await executeCommission(projectPath, commissionName, requirements);
+}
+
+// ── 既存コマンド: /save ───────────────────────────────────
+
+async function handleSaveConversation(
+  session: InteractiveSessionUseCase,
+): Promise<void> {
+  const history = session.getHistory();
+
+  if (history.length === 0) {
+    printWarning("会話履歴がありません。先にAIと会話してください。");
+    console.log();
+    return;
+  }
+
+  const spinner = ora({ text: "要件定義書を生成中...", color: "cyan" }).start();
+
+  try {
+    const summarizePrompt = [
+      "これまでの会話内容を元に、要件定義書をMarkdown形式で出力してください。",
+      "以下の構成で記述してください:",
+      "",
+      "# プロジェクト名",
+      "## 概要",
+      "## 機能要件",
+      "## 非機能要件",
+      "## 前提条件・制約",
+      "## 未確定事項",
+      "",
+      "各要件には優先度（MUST/SHOULD/COULD）を付けてください。",
+      "Markdown以外の装飾や説明は不要です。要件定義書の本文だけを出力してください。",
+    ].join("\n");
+
+    const content = await session.sendMessage(summarizePrompt);
+    spinner.stop();
+
+    const now = new Date();
+    const date = now.toISOString().slice(0, 10);
+    const time = now.toISOString().slice(11, 19).replace(/:/g, "");
+    const filename = `${date}_${time}_requirements.md`;
+    const dirPath = path.join(
+      resolveAtelierPath(process.cwd()),
+      REQUIREMENTS_DIR,
+    );
+    const filePath = path.join(dirPath, filename);
+
+    await writeTextFile(filePath, content);
+
+    console.log();
+    console.log(chalk.green("ai > ") + content);
+    console.log();
+    printSuccess(`要件定義書を保存しました: ${filePath}`);
+    console.log();
+  } catch (error) {
+    spinner.fail("要件定義書の生成に失敗しました");
+    printError(
+      error instanceof Error ? error.message : String(error),
+    );
+    console.log();
+  }
+}
+
+// ── 既存コマンド: /suggest ────────────────────────────────
+
+function handleSuggest(
+  session: InteractiveSessionUseCase,
+): void {
+  const history = session.getHistory();
+  const enhancer = new IntentEnhancerService();
+
+  let taskDescription: string;
+  if (history.length > 0) {
+    const recentMessages = history
+      .slice(-5)
+      .filter((msg) => msg.role === "user")
+      .map((msg) => msg.content)
+      .join(" ");
+    taskDescription = recentMessages;
+  } else {
+    printWarning("会話履歴がありません。先にAIと会話してください。");
+    console.log();
+    return;
+  }
+
+  console.log();
+  console.log(chalk.bold.blue("--- 推奨提案 ---"));
+  console.log();
+
+  const paletteSuggestions = enhancer.suggestPalette(taskDescription);
+  if (paletteSuggestions.length > 0) {
+    printSuccess("推奨Palette:");
+    const pRows = paletteSuggestions.map((s) => [
+      s.name,
+      `${Math.round(s.score * 100)}%`,
+      s.description,
+    ]);
+    printTable(["Name", "Score", "Description"], pRows);
+    console.log();
+  }
+
+  const commissionSuggestions = enhancer.suggestCommission(taskDescription);
+  if (commissionSuggestions.length > 0) {
+    printSuccess("推奨Commission:");
+    const cRows = commissionSuggestions.map((s) => [
+      s.name,
+      `${Math.round(s.score * 100)}%`,
+      s.description,
+    ]);
+    printTable(["Name", "Score", "Description"], cRows);
+    console.log();
+  }
+
+  const enhanced = enhancer.enhance(taskDescription);
+  if (enhanced.addedContexts.length > 0) {
+    printInfo(`プロンプト強化提案 (${enhanced.addedContexts.length}件):`);
+    for (const ctx of enhanced.addedContexts) {
+      console.log(
+        `  ${chalk.yellow("+")} [${chalk.bold(ctx.category)}] ${ctx.content}`,
+      );
+    }
+    console.log();
+  }
+}
+
+// ── 特殊コマンドハンドラ ──────────────────────────────────
+
 async function handleSpecialCommand(
   input: string,
   session: InteractiveSessionUseCase,
@@ -99,7 +804,62 @@ async function handleSpecialCommand(
 
   switch (command) {
     case "/exit": {
+      // 対話終了時のアクション選択
+      const history = session.getHistory();
+      if (history.length > 0) {
+        const action = await selectExitAction();
+        switch (action) {
+          case "go":
+            await handleGoCommand(session);
+            break;
+          case "save_task": {
+            // AIに要約させてタスクキューに追加
+            const spinner = ora({ text: "タスクを要約中...", color: "cyan" }).start();
+            try {
+              const taskSummary = await session.summarizeForTask();
+              spinner.stop();
+              const taskId = await session.queueTask(taskSummary);
+              printSuccess(`タスクをキューに追加しました: ${taskId}`);
+            } catch (error) {
+              spinner.fail("タスクの要約に失敗しました");
+              printError(error instanceof Error ? error.message : String(error));
+            }
+            break;
+          }
+          case "save_requirements":
+            await handleSaveConversation(session);
+            break;
+          case "exit":
+            break;
+        }
+      }
+      // セッションを自動保存
+      if (session.getHistory().length > 0) {
+        try {
+          const savedPath = await session.saveSession();
+          printInfo(`セッションを保存しました: ${savedPath}`);
+        } catch {
+          // 保存失敗は警告のみ
+        }
+      }
       return "exit";
+    }
+
+    case "/go": {
+      const additionalNote = parts.slice(1).join(" ").trim() || undefined;
+      await handleGoCommand(session, additionalNote);
+      return true;
+    }
+
+    case "/play": {
+      const taskDescription = parts.slice(1).join(" ").trim();
+      await handlePlayCommand(taskDescription);
+      return true;
+    }
+
+    case "/resume": {
+      await handleResumeCommand(session);
+      return true;
     }
 
     case "/queue": {
@@ -158,7 +918,18 @@ async function handleSpecialCommand(
     }
 
     case "/analyze": {
-      handleAnalyzeConversation(session);
+      await handleAnalyzeConversation(session);
+      return true;
+    }
+
+    case "/save": {
+      await handleSaveConversation(session);
+      return true;
+    }
+
+    case "/implement": {
+      const commissionName = parts[1] ?? "default";
+      await handleImplement(session, commissionName);
       return true;
     }
 
@@ -167,217 +938,116 @@ async function handleSpecialCommand(
       return true;
     }
 
+    case "/help": {
+      printCommandHelp();
+      return true;
+    }
+
     default: {
       printWarning(`不明なコマンド: ${command}`);
+      printInfo("利用可能なコマンドは /help で確認できます。");
       return true;
     }
   }
 }
 
-/**
- * 構造化要件定義モード。
- * AIがインタビュー形式で要件をヒアリングし、構造化する。
- */
-async function handleRequirementsMode(
+/** コマンドヘルプを表示する */
+function printCommandHelp(): void {
+  console.log();
+  console.log(chalk.bold("利用可能なコマンド:"));
+  console.log(chalk.dim("─".repeat(60)));
+  console.log();
+  console.log(chalk.bold("  実行系:"));
+  console.log(chalk.dim("  /go [追加指示]     ") + "対話を要約 → Commission 選択 → 実行");
+  console.log(chalk.dim("  /play <タスク>     ") + "即座に default Commission でタスク実行");
+  console.log(chalk.dim("  /implement [name]  ") + "要件定義を元に Commission を実行");
+  console.log();
+  console.log(chalk.bold("  セッション:"));
+  console.log(chalk.dim("  /resume            ") + "過去のセッション履歴を復元");
+  console.log();
+  console.log(chalk.bold("  要件定義:"));
+  console.log(chalk.dim("  /requirements      ") + "構造化要件定義モード");
+  console.log(chalk.dim("  /analyze           ") + "会話から要件を自動抽出");
+  console.log(chalk.dim("  /save              ") + "会話内容を要件定義書として保存");
+  console.log(chalk.dim("  /suggest           ") + "Commission/Palette 提案");
+  console.log();
+  console.log(chalk.bold("  タスクキュー:"));
+  console.log(chalk.dim("  /queue <desc>      ") + "タスクをキューに追加");
+  console.log(chalk.dim("  /list              ") + "キュー内タスク一覧");
+  console.log(chalk.dim("  /run               ") + "キュー内タスクを実行");
+  console.log();
+  console.log(chalk.bold("  その他:"));
+  console.log(chalk.dim("  /help              ") + "このヘルプを表示");
+  console.log(chalk.dim("  /exit              ") + "終了（アクション選択あり）");
+  console.log();
+}
+
+// ── メインループ ──────────────────────────────────────────
+
+async function startInteractiveLoop(
   session: InteractiveSessionUseCase,
 ): Promise<void> {
-  console.log();
-  console.log(chalk.bold.blue("--- 構造化要件定義モード ---"));
-  console.log(chalk.dim("AIが質問形式で要件をヒアリングします。"));
-  console.log(chalk.dim("回答を入力してください。「/done」で要件を確定します。"));
-  console.log();
-
-  const interviewPrompt = [
-    "あなたは要件ヒアリングの専門家です。",
-    "ユーザーに対して段階的に質問を行い、要件を引き出してください。",
-    "まず最初に、プロジェクトの目的とゴールについて2-3個の質問をしてください。",
-    "質問は日本語で、分かりやすく簡潔に行ってください。",
-  ].join("\n");
-
-  const spinner = ora({ text: "質問を準備中...", color: "cyan" }).start();
-  try {
-    const response = await session.sendMessage(interviewPrompt);
-    spinner.stop();
-    console.log(chalk.green("ai > ") + response);
-    console.log();
-    printInfo("回答を入力してください。要件定義が完了したら /done と入力してください。");
-    console.log();
-  } catch (error) {
-    spinner.fail("質問の準備に失敗しました");
-    printError(error instanceof Error ? error.message : String(error));
-  }
-}
-
-/**
- * 現在の会話から要件を自動抽出・構造化する。
- */
-function handleAnalyzeConversation(
-  session: InteractiveSessionUseCase,
-): void {
-  const history = session.getHistory();
-
-  if (history.length === 0) {
-    printWarning("会話履歴がありません。先にAIと会話してください。");
-    console.log();
-    return;
-  }
-
-  // 会話履歴からユーザー発言を結合して要件テキストとする
-  const userMessages = history
-    .filter((msg) => msg.role === "user")
-    .map((msg) => msg.content)
-    .join("\n");
-
-  const analyzer = new RequirementsAnalyzerService();
-  const doc = analyzer.analyzeRequirements(userMessages);
+  // stdinが閉じないようにrefを保持
+  process.stdin.ref();
 
   console.log();
-  console.log(chalk.bold.blue(`--- 要件分析結果: ${doc.title} ---`));
+  console.log(chalk.bold("ATELIER Interactive Mode"));
+  console.log(chalk.dim("─".repeat(50)));
+  console.log(chalk.dim("対話モードを開始しました。AIに質問や指示を入力してください。"));
+  console.log(chalk.dim("コマンド一覧: /help"));
+  console.log(chalk.dim("主要コマンド:"));
+  console.log(chalk.dim("  /go [追加指示]  - 対話を要約 → Commission 選択 → 実行"));
+  console.log(chalk.dim("  /play <タスク>  - 即座にタスク実行"));
+  console.log(chalk.dim("  /resume         - 過去のセッションを復元"));
+  console.log(chalk.dim("  /exit           - 終了（アクション選択あり）"));
+  console.log(chalk.dim("─".repeat(50)));
   console.log();
 
-  // 機能要件
-  if (doc.functional.length > 0) {
-    printSuccess(`機能要件 (${doc.functional.length}件):`);
-    const funcRows = doc.functional.map((r) => [
-      r.id,
-      r.description.slice(0, 60),
-      r.priority.toUpperCase(),
-      r.category,
-    ]);
-    printTable(["ID", "Description", "Priority", "Category"], funcRows);
-    console.log();
-  }
+  let running = true;
 
-  // 非機能要件
-  if (doc.nonFunctional.length > 0) {
-    printSuccess(`非機能要件 (${doc.nonFunctional.length}件):`);
-    const nfRows = doc.nonFunctional.map((r) => [
-      r.id,
-      r.description.slice(0, 60),
-      r.priority.toUpperCase(),
-      r.category,
-    ]);
-    printTable(["ID", "Description", "Priority", "Category"], nfRows);
-    console.log();
-  }
-
-  // 矛盾検出
-  const allReqs = [...doc.functional, ...doc.nonFunctional];
-  const contradictions = analyzer.detectContradictions(allReqs);
-  if (contradictions.length > 0) {
-    printWarning(`矛盾検出 (${contradictions.length}件):`);
-    for (const c of contradictions) {
-      const icon = c.severity === "error" ? chalk.red("[ERROR]") : chalk.yellow("[WARN]");
-      console.log(`  ${icon} ${c.requirementIds.join(" <-> ")}: ${c.reason}`);
+  while (running) {
+    let input: string;
+    try {
+      input = await promptLine(chalk.cyan("you > "));
+    } catch {
+      // stdinが閉じた場合は終了
+      break;
     }
-    console.log();
-  }
+    const trimmed = input.trim();
 
-  // ギャップ検出
-  const gaps = analyzer.detectGaps(allReqs);
-  if (gaps.length > 0) {
-    printWarning(`抜け漏れ検出 (${gaps.length}件):`);
-    for (const g of gaps) {
-      console.log(`  ${chalk.yellow("-")} [${g.category}] ${g.description}`);
-      console.log(`    ${chalk.dim("提案: " + g.suggestion)}`);
+    if (!trimmed) continue;
+
+    // 特殊コマンドの処理
+    if (trimmed.startsWith("/")) {
+      const handled = await handleSpecialCommand(trimmed, session);
+      if (handled === "exit") {
+        running = false;
+        continue;
+      }
+      if (handled) continue;
     }
-    console.log();
-  }
 
-  // チェックリスト
-  const checklist = analyzer.generateChecklist(allReqs);
-  printInfo(`確認チェックリスト (${checklist.items.length}件):`);
-  for (const item of checklist.items) {
-    const mark = item.required ? chalk.red("*") : chalk.dim("o");
-    console.log(`  ${mark} [${item.category}] ${item.question}`);
-  }
-  console.log();
-
-  // 前提条件
-  if (doc.assumptions.length > 0) {
-    printInfo("前提条件:");
-    for (const a of doc.assumptions) {
-      console.log(`  - ${a}`);
-    }
-    console.log();
-  }
-
-  // オープンクエスチョン
-  if (doc.openQuestions.length > 0) {
-    printInfo("未確定事項:");
-    for (const q of doc.openQuestions) {
-      console.log(`  ? ${q}`);
-    }
-    console.log();
-  }
-}
-
-/**
- * 最適なCommission/Paletteを提案する。
- */
-function handleSuggest(
-  session: InteractiveSessionUseCase,
-): void {
-  const history = session.getHistory();
-  const enhancer = new IntentEnhancerService();
-
-  // 会話の直近の内容をタスク記述として使用
-  let taskDescription: string;
-  if (history.length > 0) {
-    const recentMessages = history
-      .slice(-5)
-      .filter((msg) => msg.role === "user")
-      .map((msg) => msg.content)
-      .join(" ");
-    taskDescription = recentMessages;
-  } else {
-    printWarning("会話履歴がありません。先にAIと会話してください。");
-    console.log();
-    return;
-  }
-
-  console.log();
-  console.log(chalk.bold.blue("--- 推奨提案 ---"));
-  console.log();
-
-  // Palette提案
-  const paletteSuggestions = enhancer.suggestPalette(taskDescription);
-  if (paletteSuggestions.length > 0) {
-    printSuccess("推奨Palette:");
-    const pRows = paletteSuggestions.map((s) => [
-      s.name,
-      `${Math.round(s.score * 100)}%`,
-      s.description,
-    ]);
-    printTable(["Name", "Score", "Description"], pRows);
-    console.log();
-  }
-
-  // Commission提案
-  const commissionSuggestions = enhancer.suggestCommission(taskDescription);
-  if (commissionSuggestions.length > 0) {
-    printSuccess("推奨Commission:");
-    const cRows = commissionSuggestions.map((s) => [
-      s.name,
-      `${Math.round(s.score * 100)}%`,
-      s.description,
-    ]);
-    printTable(["Name", "Score", "Description"], cRows);
-    console.log();
-  }
-
-  // プロンプト強化提案
-  const enhanced = enhancer.enhance(taskDescription);
-  if (enhanced.addedContexts.length > 0) {
-    printInfo(`プロンプト強化提案 (${enhanced.addedContexts.length}件):`);
-    for (const ctx of enhanced.addedContexts) {
-      console.log(
-        `  ${chalk.yellow("+")} [${chalk.bold(ctx.category)}] ${ctx.content}`,
+    // 通常のメッセージをAIに送信
+    const spinner = ora({ text: "考え中...", color: "cyan" }).start();
+    try {
+      const response = await session.sendMessage(trimmed);
+      spinner.stop();
+      console.log();
+      console.log(chalk.green("ai > ") + response);
+      console.log();
+    } catch (error) {
+      spinner.fail("応答の取得に失敗しました");
+      printError(
+        error instanceof Error ? error.message : String(error),
       );
+      console.log();
     }
-    console.log();
   }
+
+  console.log(chalk.dim("対話モードを終了しました。"));
 }
+
+// ── コマンド定義 ──────────────────────────────────────────
 
 export function createInteractiveCommand(): Command {
   const talk = new Command("talk")
@@ -399,6 +1069,9 @@ export function createInteractiveCommand(): Command {
       }
 
       const session = new InteractiveSessionUseCase(medium, projectPath);
+
+      // ポリシーを読み込む
+      await session.loadPolicy();
 
       await startInteractiveLoop(session);
     });

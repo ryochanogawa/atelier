@@ -51,6 +51,7 @@ export { Canvas } from "./models/canvas.model.js";
 export {
   Stroke,
   type StrokeDefinition,
+  type ConductorDefinition,
 } from "./models/stroke.model.js";
 
 export {
@@ -85,6 +86,11 @@ export {
   CritiqueService,
   type CritiqueRule,
 } from "./services/critique.service.js";
+
+export {
+  CommissionSelectorService,
+  type CommissionMatch,
+} from "./services/commission-selector.service.js";
 
 // Ports
 export type { MediumPort } from "./ports/medium.port.js";

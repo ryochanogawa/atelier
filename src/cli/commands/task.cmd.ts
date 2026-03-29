@@ -6,7 +6,7 @@
 import { Command } from "commander";
 import ora from "ora";
 import chalk from "chalk";
-import { QueueTaskUseCase, RunQueueUseCase } from "../../application/use-cases/queue-task.use-case.js";
+import { QueueTaskUseCase, RunQueueUseCase, type TaskRunDetail } from "../../application/use-cases/queue-task.use-case.js";
 import { createEventBus } from "../../infrastructure/event-bus/event-emitter.js";
 import {
   printTable,
@@ -185,9 +185,15 @@ export function createTaskCommand(): Command {
   task
     .command("run")
     .description("キュー内のタスクを一括実行する")
-    .action(async () => {
+    .option("--concurrency <number>", "最大並列実行数", "1")
+    .action(async (opts) => {
       const projectPath = process.cwd();
-      const spinner = ora("キュー内のタスクを実行中...").start();
+      const concurrency = Math.max(1, parseInt(opts.concurrency, 10) || 1);
+      const spinner = ora(
+        concurrency > 1
+          ? `キュー内のタスクを並列実行中 (concurrency=${concurrency})...`
+          : "キュー内のタスクを実行中...",
+      ).start();
 
       try {
         const mediumRegistry = await createMediumRegistry(projectPath);
@@ -202,12 +208,35 @@ export function createTaskCommand(): Command {
           eventBus,
         );
 
-        const result = await useCase.execute(projectPath);
+        const result = await useCase.execute(projectPath, concurrency);
         spinner.stop();
 
-        printSuccess(
-          `タスク実行完了: ${result.completed} 件成功, ${result.failed} 件失敗`,
-        );
+        // サマリー表示
+        const total = result.completed + result.failed;
+        if (result.failed > 0) {
+          printSuccess(
+            `タスク実行完了 (${result.completed}/${total} 成功, ${result.failed} 失敗)`,
+          );
+        } else {
+          printSuccess(
+            `タスク実行完了 (${result.completed}/${total} 成功)`,
+          );
+        }
+
+        // 詳細テーブル表示
+        if (result.details.length > 0) {
+          const rows = result.details.map((d: TaskRunDetail) => [
+            d.task.description,
+            d.success ? chalk.green("成功") : chalk.red("失敗"),
+            d.branch ?? "-",
+            d.error ? d.error.substring(0, 60) : "",
+          ]);
+
+          printTable(
+            ["タスク", "状態", "ブランチ", "エラー"],
+            rows,
+          );
+        }
       } catch (error) {
         spinner.fail("タスク実行に失敗しました");
         printError(

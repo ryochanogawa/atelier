@@ -1,11 +1,13 @@
 /**
  * Manage Branches Use Case
- * atelier/ プレフィックスのブランチ管理。一覧・マージ・削除・再実行を行う。
+ * atelier/ プレフィックスのブランチ管理。worktree と連携して一覧・マージ・削除・再実行を行う。
  */
 
 import { simpleGit, type SimpleGit } from "simple-git";
+import path from "node:path";
 
 const BRANCH_PREFIX = "atelier/";
+const WORKTREES_DIR = ".atelier/worktrees";
 
 /** ブランチ情報 */
 export interface BranchInfo {
@@ -13,31 +15,42 @@ export interface BranchInfo {
   readonly current: boolean;
   readonly commit: string;
   readonly label: string;
+  readonly worktreePath: string | null;
 }
 
 /**
  * ManageBranchesUseCase
  * atelier/ プレフィックス付きブランチの管理を行う。
+ * worktree と連携し、takt と同等のブランチ管理を提供する。
  */
 export class ManageBranchesUseCase {
   private readonly git: SimpleGit;
+  private readonly projectPath: string;
 
   constructor(projectPath: string) {
     this.git = simpleGit(projectPath);
+    this.projectPath = projectPath;
   }
 
-  /** atelier/ プレフィックスのブランチ一覧を取得する */
+  /** atelier/ プレフィックスのブランチ一覧を取得する（worktree 情報付き） */
   async listBranches(): Promise<BranchInfo[]> {
+    // worktree 一覧を取得してブランチ→パスのマッピングを作成
+    const worktreeMap = await this.getWorktreeMap();
+
     const branchSummary = await this.git.branch(["-a", "--list", `${BRANCH_PREFIX}*`]);
     const branches: BranchInfo[] = [];
 
     for (const [name, data] of Object.entries(branchSummary.branches)) {
       if (name.startsWith(BRANCH_PREFIX) || name.includes(`/${BRANCH_PREFIX}`)) {
+        const fullRef = `refs/heads/${name}`;
+        const worktreePath = worktreeMap.get(fullRef) ?? worktreeMap.get(name) ?? null;
+
         branches.push({
           name,
           current: data.current,
           commit: data.commit,
           label: data.label,
+          worktreePath,
         });
       }
     }
@@ -45,7 +58,7 @@ export class ManageBranchesUseCase {
     return branches;
   }
 
-  /** 指定ブランチをメインブランチにマージする */
+  /** 指定ブランチをメインブランチにマージし、worktree + ブランチを削除する */
   async mergeBranch(name: string): Promise<void> {
     const branchName = this.ensurePrefix(name);
 
@@ -63,55 +76,56 @@ export class ManageBranchesUseCase {
       await this.git.checkout(currentBranch);
       throw error;
     }
+
+    // マージ成功後、worktree とブランチを削除
+    try {
+      await this.removeWorktreeForBranch(branchName);
+    } catch {
+      // worktree 削除に失敗しても続行
+    }
+
+    try {
+      await this.git.deleteLocalBranch(branchName, true);
+    } catch {
+      // ブランチ削除に失敗しても続行（既にマージ済み）
+    }
   }
 
   /** 指定ブランチを削除する（worktreeも削除） */
   async deleteBranch(name: string): Promise<void> {
     const branchName = this.ensurePrefix(name);
 
-    // worktree があれば削除
-    try {
-      const worktrees = await this.git.raw(["worktree", "list", "--porcelain"]);
-      const lines = worktrees.split("\n");
-      for (const line of lines) {
-        if (line.startsWith("branch ") && line.includes(branchName)) {
-          // 対応する worktree パスを取得して削除
-          const idx = lines.indexOf(line);
-          if (idx > 0) {
-            const worktreeLine = lines[idx - 1];
-            if (worktreeLine?.startsWith("worktree ")) {
-              const worktreePath = worktreeLine.replace("worktree ", "");
-              await this.git.raw(["worktree", "remove", worktreePath, "--force"]);
-            }
-          }
-        }
-      }
-    } catch {
-      // worktree 操作に失敗しても続行
-    }
+    // worktree を削除
+    await this.removeWorktreeForBranch(branchName);
 
     // ブランチを削除
     await this.git.deleteLocalBranch(branchName, true);
   }
 
-  /** 指定ブランチの再実行（ブランチを再作成） */
-  async retryBranch(name: string): Promise<void> {
+  /** 指定ブランチの worktree で再実行する（worktree を保持したまま） */
+  async retryBranch(name: string): Promise<{ branchName: string; worktreePath: string }> {
     const branchName = this.ensurePrefix(name);
-
-    // 現在のメインブランチを取得
     const mainBranch = await this.getMainBranch();
 
-    // ブランチを削除して再作成
-    try {
-      await this.deleteBranch(name);
-    } catch {
-      // 既に削除されている場合は無視
+    // ブランチが存在するか確認
+    const branches = await this.git.branchLocal();
+    if (!branches.all.includes(branchName)) {
+      throw new Error(`ブランチ '${branchName}' が見つかりません`);
     }
 
-    await this.git.checkoutBranch(branchName, mainBranch);
+    // 既存の worktree パスを取得
+    const worktreeMap = await this.getWorktreeMap();
+    const fullRef = `refs/heads/${branchName}`;
+    let worktreePath = worktreeMap.get(fullRef) ?? worktreeMap.get(branchName) ?? null;
 
-    // メインブランチに戻る
-    await this.git.checkout(mainBranch);
+    // worktree がなければ新しく作成
+    if (!worktreePath) {
+      const safeName = branchName.replace(/\//g, "-");
+      worktreePath = path.join(this.projectPath, WORKTREES_DIR, safeName);
+      await this.git.raw(["worktree", "add", worktreePath, branchName]);
+    }
+
+    return { branchName, worktreePath };
   }
 
   /** 現在のブランチ名を取得する */
@@ -133,5 +147,60 @@ export class ManageBranchesUseCase {
   /** atelier/ プレフィックスを付与する */
   private ensurePrefix(name: string): string {
     return name.startsWith(BRANCH_PREFIX) ? name : `${BRANCH_PREFIX}${name}`;
+  }
+
+  /** worktree 一覧を取得して branch → path のマップを作成する */
+  private async getWorktreeMap(): Promise<Map<string, string>> {
+    const map = new Map<string, string>();
+
+    try {
+      const worktreeOutput = await this.git.raw(["worktree", "list", "--porcelain"]);
+      const entries = worktreeOutput.split("\n\n");
+
+      for (const entry of entries) {
+        const lines = entry.trim().split("\n");
+        let wtPath: string | null = null;
+        let wtBranch: string | null = null;
+
+        for (const line of lines) {
+          if (line.startsWith("worktree ")) {
+            wtPath = line.slice("worktree ".length);
+          }
+          if (line.startsWith("branch ")) {
+            wtBranch = line.slice("branch ".length);
+          }
+        }
+
+        if (wtPath && wtBranch) {
+          map.set(wtBranch, wtPath);
+          // refs/heads/ を除いた名前でも引けるように
+          if (wtBranch.startsWith("refs/heads/")) {
+            map.set(wtBranch.slice("refs/heads/".length), wtPath);
+          }
+        }
+      }
+    } catch {
+      // worktree list に失敗しても空のマップを返す
+    }
+
+    return map;
+  }
+
+  /** 指定ブランチに対応する worktree を削除する */
+  private async removeWorktreeForBranch(branchName: string): Promise<void> {
+    const worktreeMap = await this.getWorktreeMap();
+    const fullRef = `refs/heads/${branchName}`;
+    const worktreePath = worktreeMap.get(fullRef) ?? worktreeMap.get(branchName);
+
+    if (worktreePath) {
+      try {
+        await this.git.raw(["worktree", "remove", worktreePath, "--force"]);
+      } catch {
+        // worktree remove が失敗した場合、prune で掃除
+        const { rm } = await import("node:fs/promises");
+        await rm(worktreePath, { recursive: true, force: true }).catch(() => {});
+        await this.git.raw(["worktree", "prune"]);
+      }
+    }
   }
 }
