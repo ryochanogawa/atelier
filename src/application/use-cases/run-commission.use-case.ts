@@ -92,6 +92,7 @@ export class CommissionRunUseCase {
         defaultMedium: options.medium ?? studioConfig.defaultMedium,
         cwd: worktreePath,
         projectPath,
+        paletteProviders: studioConfig.paletteProviders,
       });
 
       const result = await runner.execute(commission, runId, options);

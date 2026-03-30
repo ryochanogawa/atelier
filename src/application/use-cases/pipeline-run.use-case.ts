@@ -10,6 +10,14 @@ import type { MediumRegistry } from "../services/commission-runner.service.js";
 import type { TypedEventEmitter, AtelierEvents } from "../../infrastructure/event-bus/event-emitter.js";
 import type { PullRequestPort } from "../../domain/ports/pull-request.port.js";
 import type { RunResultDto } from "../dto/run-result.dto.js";
+import type { PipelineConfig } from "../../shared/types.js";
+import {
+  buildTemplateVars,
+  buildCommitMessage,
+  buildPRTitle,
+  buildPRBody,
+  getBranchPrefix,
+} from "../../shared/pipeline-template.js";
 
 export interface PipelineRunResult {
   readonly runResult: RunResultDto;
@@ -53,6 +61,7 @@ export class PipelineRunUseCase {
       head?: string;
       medium?: string;
       task?: string;
+      pipelineConfig?: PipelineConfig;
     },
   ): Promise<PipelineRunResult> {
     this.loggerPort.info(`Pipeline 実行開始: ${commissionName}`);
@@ -78,9 +87,27 @@ export class PipelineRunUseCase {
     if (options.autoPR && this.createPRUseCase) {
       try {
         const base = options.base ?? "main";
-        const head = options.head ?? `atelier/${runResult.runId}`;
+        const branchPrefix = getBranchPrefix(options.pipelineConfig);
+        const head = options.head ?? `${branchPrefix}${runResult.runId}`;
 
-        pr = await this.createPRUseCase.execute(runResult, { base, head });
+        // テンプレート変数を構築
+        const templateVars = buildTemplateVars({
+          task: options.task,
+          commission: commissionName,
+          branch: head,
+        });
+
+        // テンプレートからタイトル・本文を生成
+        const templateTitle = buildPRTitle(templateVars, options.pipelineConfig);
+        const templateBody = buildPRBody(templateVars, options.pipelineConfig);
+
+        pr = await this.createPRUseCase.execute(runResult, {
+          base,
+          head,
+          taskDescription: options.task,
+          templateTitle,
+          templateBody: templateBody ?? undefined,
+        });
       } catch (error) {
         this.loggerPort.warn(
           `PR 作成に失敗: ${error instanceof Error ? error.message : String(error)}`,

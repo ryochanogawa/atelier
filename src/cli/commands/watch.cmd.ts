@@ -43,10 +43,14 @@ function createConfigPort(): ConfigPort {
       const content = await readTextFile(configPath);
       const parsed = parseYaml(content) as Record<string, unknown>;
       const studio = parsed.studio as Record<string, unknown>;
+      const concurrencyRaw = studio?.concurrency as number | undefined;
       return {
         defaultMedium: (studio?.default_medium as string) ?? "claude-code",
         language: (studio?.language as string) ?? "ja",
         logLevel: (studio?.log_level as StudioConfig["logLevel"]) ?? "info",
+        concurrency: concurrencyRaw != null ? Math.max(1, Math.min(10, concurrencyRaw)) : undefined,
+        baseBranch: (studio?.base_branch as string) ?? undefined,
+        minimalOutput: (studio?.minimal_output as boolean) ?? false,
       };
     },
     async loadMediaConfig(
@@ -239,10 +243,24 @@ export function createWatchCommand(): Command {
   const watch = new Command("watch")
     .description("タスクキューを監視し、新しいタスクを自動実行する（常駐モード）")
     .option("--interval <ms>", "ポーリング間隔（ミリ秒）", String(DEFAULT_POLL_INTERVAL))
+    .option("--concurrency <number>", "最大並列実行数（studio.yaml のデフォルトを上書き）")
     .action(async (opts) => {
       const projectPath = process.cwd();
       const pollInterval = parseInt(opts.interval, 10) || DEFAULT_POLL_INTERVAL;
       const store = new TaskStoreAdapter(projectPath);
+
+      // studio.yaml から concurrency デフォルト値を取得
+      let configConcurrency = 1;
+      try {
+        const configPort = createConfigPort();
+        const studioConfig = await configPort.loadStudioConfig(projectPath);
+        configConcurrency = studioConfig.concurrency ?? 1;
+      } catch {
+        // 設定ファイルがない場合はデフォルト1
+      }
+      const concurrency = opts.concurrency
+        ? Math.max(1, parseInt(opts.concurrency, 10) || 1)
+        : configConcurrency;
 
       let running = true;
       let taskCount = 0;
@@ -257,6 +275,9 @@ export function createWatchCommand(): Command {
       console.log(chalk.dim("─".repeat(50)));
       printInfo(`監視対象: .atelier/tasks.yaml`);
       printInfo(`ポーリング間隔: ${pollInterval}ms`);
+      if (concurrency > 1) {
+        printInfo(`並列実行数: ${concurrency}`);
+      }
       printInfo("タスクを待機中... (Ctrl+C で停止)");
       console.log();
 
@@ -298,20 +319,39 @@ export function createWatchCommand(): Command {
           const next = queue.getNext();
 
           if (next) {
-            taskCount++;
-            console.log();
-            printInfo(`=== タスク ${taskCount}: ${next.description} ===`);
-            console.log();
-
-            const success = await executeOneTask(next, projectPath, store, queue);
-
-            if (success) {
-              successCount++;
-              printSuccess(`タスク完了: ${next.description}`);
-            } else {
-              failCount++;
-              printError(`タスク失敗: ${next.description}`);
+            // 並列実行: concurrency 個のタスクを同時に実行
+            const tasksToRun: Task[] = [next];
+            if (concurrency > 1) {
+              // 追加の pending タスクを取得
+              for (let i = 1; i < concurrency; i++) {
+                const additional = queue.getNext();
+                if (additional && !tasksToRun.find(t => t.id === additional.id)) {
+                  tasksToRun.push(additional);
+                } else {
+                  break;
+                }
+              }
             }
+
+            const promises = tasksToRun.map(async (t) => {
+              taskCount++;
+              const currentCount = taskCount;
+              console.log();
+              printInfo(`=== タスク ${currentCount}: ${t.description} ===`);
+              console.log();
+
+              const success = await executeOneTask(t, projectPath, store, queue);
+
+              if (success) {
+                successCount++;
+                printSuccess(`タスク完了: ${t.description}`);
+              } else {
+                failCount++;
+                printError(`タスク失敗: ${t.description}`);
+              }
+            });
+
+            await Promise.all(promises);
 
             console.log();
             printInfo("タスクを待機中... (Ctrl+C で停止)");

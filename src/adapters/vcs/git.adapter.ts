@@ -10,13 +10,15 @@ import { rm } from "node:fs/promises";
 import type { VcsPort } from "./types.js";
 
 const WORKTREE_BASE_DIR = ".atelier/studios";
-const BRANCH_PREFIX = "atelier/";
+const DEFAULT_BRANCH_PREFIX = "atelier/";
 
 export class GitAdapter implements VcsPort {
   private readonly git: SimpleGit;
+  private readonly branchPrefix: string;
 
-  constructor(repoPath?: string) {
+  constructor(repoPath?: string, branchPrefix?: string) {
     this.git = simpleGit(repoPath);
+    this.branchPrefix = branchPrefix ?? DEFAULT_BRANCH_PREFIX;
   }
 
   /**
@@ -62,9 +64,9 @@ export class GitAdapter implements VcsPort {
    * atelier/ 接頭辞付きのブランチを作成する。
    */
   async createBranch(name: string): Promise<void> {
-    const branchName = name.startsWith(BRANCH_PREFIX)
+    const branchName = name.startsWith(this.branchPrefix)
       ? name
-      : `${BRANCH_PREFIX}${name}`;
+      : `${this.branchPrefix}${name}`;
 
     await this.git.checkoutLocalBranch(branchName);
   }

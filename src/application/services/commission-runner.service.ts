@@ -12,7 +12,7 @@ import { Canvas } from "../../domain/models/canvas.model.js";
 import { AggregateEvaluator } from "../../domain/services/aggregate-evaluator.service.js";
 import { StrokeStatus } from "../../domain/value-objects/stroke-status.vo.js";
 import { CommissionStatus } from "../../domain/value-objects/commission-status.vo.js";
-import type { CommissionDefinition, LoopMonitorYaml, RunOptions } from "../../shared/types.js";
+import type { CommissionDefinition, LoopMonitorYaml, RunOptions, PaletteProviderConfig } from "../../shared/types.js";
 import type { RunErrorDto } from "../dto/run-result.dto.js";
 import type { TypedEventEmitter, AtelierEvents } from "../../infrastructure/event-bus/event-emitter.js";
 import { runSubprocess } from "../../infrastructure/process/subprocess.js";
@@ -71,6 +71,8 @@ export interface CommissionRunnerDeps {
   readonly defaultMedium: string;
   readonly cwd: string;
   readonly projectPath: string;
+  /** Palette ごとの medium/model オーバーライド（studio.yaml の palette_providers） */
+  readonly paletteProviders?: Readonly<Record<string, PaletteProviderConfig>>;
 }
 
 export interface CommissionRunResult {
@@ -84,6 +86,13 @@ export interface CommissionRunResult {
  */
 export class CommissionRunnerService {
   private readonly deps: CommissionRunnerDeps;
+
+  /** Commission 全体の stroke 実行回数（テンプレート変数 {{iteration}} 用） */
+  private _iteration = 0;
+  /** 現在の stroke が何回目の実行か（テンプレート変数 {{stroke_iteration}} 用） */
+  private _strokeIteration = 0;
+  /** ループモニターの max threshold（テンプレート変数 {{max_iterations}} 用） */
+  private _maxIterations = "";
 
   constructor(deps: CommissionRunnerDeps) {
     this.deps = deps;
@@ -104,12 +113,19 @@ export class CommissionRunnerService {
     const errors: RunErrorDto[] = [];
     let strokesExecuted = 0;
 
+    // palette_providers から palette ごとの medium/model を解決するヘルパー
+    const paletteProviders = this.deps.paletteProviders ?? {};
+    const resolvePaletteMedium = (paletteName: string, strokeMedium?: string): string =>
+      strokeMedium ?? options.medium ?? paletteProviders[paletteName]?.medium ?? this.deps.defaultMedium;
+    const resolvePaletteModel = (paletteName: string, strokeModel?: string): string | undefined =>
+      strokeModel ?? paletteProviders[paletteName]?.model;
+
     const strokes = commission.strokes.map(
       (sd) =>
         new Stroke({
           name: sd.name,
           palette: sd.palette,
-          medium: sd.medium ?? options.medium ?? this.deps.defaultMedium,
+          medium: resolvePaletteMedium(sd.palette, sd.medium),
           allowEdit: sd.allow_edit ?? false,
           instruction: sd.instruction,
           inputs: [...(sd.inputs ?? [])],
@@ -157,6 +173,9 @@ export class CommissionRunnerService {
                 contract: p.contract,
               }))
             : undefined,
+          policy: sd.policy,
+          model: resolvePaletteModel(sd.palette, sd.model),
+          allowedTools: sd.allowed_tools ? [...sd.allowed_tools] : undefined,
         }),
     );
 
@@ -182,6 +201,13 @@ export class CommissionRunnerService {
       });
 
       const strokeStart = Date.now();
+
+      // テンプレート変数用のイテレーション情報を更新
+      this._iteration = strokesExecuted + 1;
+      this._strokeIteration = (strokeExecCounts.get(activeStroke.name) ?? 0) + 1;
+      // loop_monitors から現在の stroke を含む cycle の最大 threshold を取得
+      const applicableMonitor = loopMonitors.find((m) => m.cycle.includes(activeStroke.name));
+      this._maxIterations = applicableMonitor ? String(applicableMonitor.threshold) : "";
 
       try {
         if (options.dryRun) {
@@ -340,6 +366,11 @@ export class CommissionRunnerService {
           });
 
           const strokeStart = Date.now();
+
+          // テンプレート変数用のイテレーション情報を更新（並列パス）
+          this._iteration = strokesExecuted + 1;
+          this._strokeIteration = 1;
+          this._maxIterations = "";
 
           if (options.dryRun) {
             stroke.transitionTo(StrokeStatus.Composing);
@@ -504,8 +535,15 @@ export class CommissionRunnerService {
     if (!args.includes("--print") && !args.includes("-p")) {
       args.unshift("-p");
     }
-    // allow_edit の場合、ファイル編集ツールを許可
-    if (stroke.allowEdit && !args.includes("--allowedTools")) {
+    // stroke 固有のモデル指定
+    if (stroke.model) {
+      args.push("--model", stroke.model);
+    }
+    // stroke 固有のツールホワイトリスト（allowedTools が明示指定されている場合はそちらを優先）
+    if (stroke.allowedTools && stroke.allowedTools.length > 0) {
+      args.push("--allowedTools", ...stroke.allowedTools);
+    } else if (stroke.allowEdit && !args.includes("--allowedTools")) {
+      // allow_edit の場合、ファイル編集ツールを許可
       args.push("--allowedTools", "Edit", "Write", "Read", "Glob", "Grep", "Bash");
     }
 
@@ -652,6 +690,8 @@ export class CommissionRunnerService {
           `${stroke.name}.${sub.name}`,
           stroke.allowEdit,
           `atelier-parallel-${sub.name}-`,
+          stroke.model,
+          stroke.allowedTools,
         );
 
         this.deps.eventBus.emit("medium:response", {
@@ -789,7 +829,12 @@ export class CommissionRunnerService {
       if (!args.includes("--print") && !args.includes("-p")) {
         args.unshift("-p");
       }
-      if (stroke.allowEdit && !args.includes("--allowedTools")) {
+      if (stroke.model) {
+        args.push("--model", stroke.model);
+      }
+      if (stroke.allowedTools && stroke.allowedTools.length > 0) {
+        args.push("--allowedTools", ...stroke.allowedTools);
+      } else if (stroke.allowEdit && !args.includes("--allowedTools")) {
         args.push("--allowedTools", "Edit", "Write", "Read", "Glob", "Grep", "Bash");
       }
 
@@ -884,6 +929,8 @@ export class CommissionRunnerService {
       stroke.name,
       false, // allow_edit = false for decomposition
       `atelier-team-leader-`,
+      stroke.model,
+      stroke.allowedTools,
     );
 
     this.deps.eventBus.emit("medium:response", {
@@ -952,6 +999,8 @@ export class CommissionRunnerService {
           `${stroke.name}.worker-${index}`,
           workerAllowEdit,
           `atelier-worker-${index}-`,
+          stroke.model,
+          stroke.allowedTools,
         );
 
         this.deps.eventBus.emit("medium:response", {
@@ -1052,12 +1101,19 @@ export class CommissionRunnerService {
     logLabel: string,
     allowEdit: boolean,
     tmpPrefix: string,
+    model?: string,
+    allowedTools?: readonly string[],
   ): Promise<{ stdout: string; stderr: string; exitCode: number; duration: number }> {
     const args = [...mediumConfig.args];
     if (!args.includes("--print") && !args.includes("-p")) {
       args.unshift("-p");
     }
-    if (allowEdit && !args.includes("--allowedTools")) {
+    if (model) {
+      args.push("--model", model);
+    }
+    if (allowedTools && allowedTools.length > 0) {
+      args.push("--allowedTools", ...allowedTools);
+    } else if (allowEdit && !args.includes("--allowedTools")) {
       args.push("--allowedTools", "Edit", "Write", "Read", "Glob", "Grep", "Bash");
     }
 
@@ -1137,8 +1193,15 @@ export class CommissionRunnerService {
       }
     }
 
-    // 5. Policy: Palette のポリシーを末尾に配置（recency effect 活用）
-    if (palette?.policies && palette.policies.length > 0) {
+    // 5. Policy: stroke固有 > Palette のポリシーを末尾に配置（recency effect 活用）
+    if (stroke.policy) {
+      // stroke.policy が指定されている場合、そのpolicyを最優先で使用
+      const policyContents = await this.loadPolicies([stroke.policy]);
+      if (policyContents.length > 0) {
+        parts.push(`[Policy]\n${policyContents.join("\n\n")}`);
+      }
+    } else if (palette?.policies && palette.policies.length > 0) {
+      // フォールバック: Palette のポリシーを使用
       const policyContents = await this.loadPolicies(palette.policies);
       if (policyContents.length > 0) {
         parts.push(`[Policy]\n${policyContents.join("\n\n")}`);
@@ -1345,9 +1408,20 @@ export class CommissionRunnerService {
 
   /**
    * テンプレート変数 {{variable}} を Canvas の値で展開する。
+   * ランタイム変数（iteration, max_iterations, stroke_iteration）も展開する。
    */
   private expandTemplateVariables(template: string, canvas: Canvas): string {
+    // ランタイム変数（Canvas より優先）
+    const runtimeVars: Record<string, string> = {
+      iteration: String(this._iteration),
+      max_iterations: this._maxIterations,
+      stroke_iteration: String(this._strokeIteration),
+    };
+
     return template.replace(/\{\{(\w+)\}\}/g, (_match: string, key: string) => {
+      if (key in runtimeVars) {
+        return runtimeVars[key];
+      }
       const value = canvas.get<string>(key);
       return value !== undefined ? value : `{{${key}}}`;
     });
@@ -1363,11 +1437,8 @@ export class CommissionRunnerService {
       return null;
     }
 
-    // テンプレート変数 {{variable}} を Canvas の値で展開
-    return contract.format.replace(/\{\{(\w+)\}\}/g, (_match: string, key: string) => {
-      const value = canvas.get<string>(key);
-      return value !== undefined ? value : `{{${key}}}`;
-    });
+    // テンプレート変数 {{variable}} を Canvas の値で展開（ランタイム変数含む）
+    return this.expandTemplateVariables(contract.format, canvas);
   }
 
   /**

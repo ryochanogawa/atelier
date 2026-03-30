@@ -71,6 +71,9 @@ export interface StrokeDefinition {
   readonly conductor?: ConductorDefinition;
   readonly teamLeader?: TeamLeaderDefinition;
   readonly parallel?: readonly ParallelSubStroke[];
+  readonly policy?: string;
+  readonly model?: string;
+  readonly allowedTools?: readonly string[];
 }
 
 export class Stroke {
@@ -89,6 +92,9 @@ export class Stroke {
   readonly conductor?: ConductorDefinition;
   readonly teamLeader?: TeamLeaderDefinition;
   readonly parallel?: readonly ParallelSubStroke[];
+  readonly policy?: string;
+  readonly model?: string;
+  readonly allowedTools?: readonly string[];
 
   private _status: StrokeStatus;
 
@@ -118,6 +124,11 @@ export class Stroke {
       : undefined;
     this.parallel = definition.parallel
       ? Object.freeze(definition.parallel.map(p => Object.freeze({ ...p })))
+      : undefined;
+    this.policy = definition.policy;
+    this.model = definition.model;
+    this.allowedTools = definition.allowedTools
+      ? Object.freeze([...definition.allowedTools])
       : undefined;
     this._status = StrokeStatus.Pending;
   }

@@ -15,7 +15,7 @@ import { CreatePRUseCase } from "../../application/use-cases/create-pr.use-case.
 import { createPRAdapter } from "../../adapters/vcs/create-pr-adapter.js";
 import type { ConfigPort, VcsPort, LoggerPort } from "../../application/use-cases/run-commission.use-case.js";
 import type { MediumRegistry } from "../../application/services/commission-runner.service.js";
-import type { StudioConfig, MediumConfig } from "../../shared/types.js";
+import type { StudioConfig, MediumConfig, PaletteProviderConfig } from "../../shared/types.js";
 import { createEventBus } from "../../infrastructure/event-bus/event-emitter.js";
 import { readTextFile } from "../../infrastructure/fs/file-system.js";
 import { resolveAtelierPath, generateRunId } from "../../shared/utils.js";
@@ -40,10 +40,21 @@ function createConfigPort(): ConfigPort {
       const content = await readTextFile(configPath);
       const parsed = parseYaml(content) as Record<string, unknown>;
       const studio = parsed.studio as Record<string, unknown>;
+      // palette_providers の読み込み
+      const rawPaletteProviders = (parsed.palette_providers ?? {}) as Record<string, Record<string, unknown>>;
+      const paletteProviders: Record<string, PaletteProviderConfig> = {};
+      for (const [name, config] of Object.entries(rawPaletteProviders)) {
+        paletteProviders[name] = {
+          medium: config.medium as string | undefined,
+          model: config.model as string | undefined,
+        };
+      }
+
       return {
         defaultMedium: (studio?.default_medium as string) ?? "claude-code",
         language: (studio?.language as string) ?? "ja",
         logLevel: (studio?.log_level as StudioConfig["logLevel"]) ?? "info",
+        ...(Object.keys(paletteProviders).length > 0 ? { paletteProviders } : {}),
       };
     },
     async loadMediaConfig(

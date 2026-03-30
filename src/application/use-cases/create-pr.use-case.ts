@@ -27,7 +27,16 @@ export class CreatePRUseCase {
    */
   async execute(
     runResult: RunResultDto,
-    options: { base: string; head: string; draft?: boolean; taskDescription?: string },
+    options: {
+      base: string;
+      head: string;
+      draft?: boolean;
+      taskDescription?: string;
+      /** テンプレートから生成済みの PR タイトル */
+      templateTitle?: string;
+      /** テンプレートから生成済みの PR 本文 */
+      templateBody?: string;
+    },
   ): Promise<CreatePRResult> {
     this.loggerPort.info(`PR を作成中... (base: ${options.base}, head: ${options.head})`);
 
@@ -37,7 +46,7 @@ export class CreatePRUseCase {
       const existing = existingPRs[0]!;
       this.loggerPort.info(`既存の PR #${existing.number} が見つかりました。コメントを追加します: ${existing.url}`);
 
-      const commentBody = this.buildBody(runResult);
+      const commentBody = options.templateBody ?? this.buildBody(runResult);
       await this.pullRequest.commentOnPr(existing.number, commentBody);
 
       return { number: existing.number, url: existing.url, skipped: true };
@@ -47,8 +56,8 @@ export class CreatePRUseCase {
     this.loggerPort.info(`ブランチ '${options.head}' をリモートへプッシュ中...`);
     await this.pullRequest.pushBranch(options.head);
 
-    const title = this.buildTitle(runResult, options.taskDescription);
-    const body = this.buildBody(runResult);
+    const title = options.templateTitle ?? this.buildTitle(runResult, options.taskDescription);
+    const body = options.templateBody ?? this.buildBody(runResult);
 
     const pr = await this.pullRequest.createPR({
       title,

@@ -60,11 +60,25 @@ export interface RunOptions {
   readonly initialCanvas?: Readonly<Record<string, string>>;
 }
 
+/** Palette ごとの Provider 設定 */
+export interface PaletteProviderConfig {
+  readonly medium?: string;
+  readonly model?: string;
+}
+
 /** Studio 設定 */
 export interface StudioConfig {
   readonly defaultMedium: string;
   readonly language: string;
   readonly logLevel: LogLevel;
+  /** タスク並列実行数（1-10、デフォルト: 1） */
+  readonly concurrency?: number;
+  /** ベースブランチ（デフォルト: 自動検出） */
+  readonly baseBranch?: string;
+  /** CI向け出力抑制（デフォルト: false） */
+  readonly minimalOutput?: boolean;
+  /** Palette ごとの medium/model オーバーライド */
+  readonly paletteProviders?: Readonly<Record<string, PaletteProviderConfig>>;
 }
 
 /** Medium 設定 */
@@ -142,6 +156,9 @@ export interface StrokeDefinitionYaml {
   readonly depends_on?: readonly string[];
   readonly contract?: string;
   readonly knowledge?: readonly string[];
+  readonly policy?: string;
+  readonly model?: string;
+  readonly allowed_tools?: readonly string[];
   readonly arpeggio?: ArpeggioDefinitionYaml;
   readonly conductor?: {
     readonly palette?: string;  // デフォルト: "conductor"
@@ -151,10 +168,26 @@ export interface StrokeDefinitionYaml {
   readonly parallel?: readonly ParallelStrokeYaml[];
 }
 
+/** Pipeline テンプレート変数 */
+export interface PipelineTemplateVars {
+  /** タスク説明文 */
+  readonly task: string;
+  /** 使用した Commission 名 */
+  readonly commission: string;
+  /** ブランチ名 */
+  readonly branch: string;
+  /** 実行日 (YYYY-MM-DD) */
+  readonly date: string;
+}
+
 /** Pipeline 設定（studio.yaml の pipeline セクション） */
 export interface PipelineConfig {
-  /** コミットメッセージテンプレート (例: "feat: {title} (#{issue})") */
+  /** ブランチ名プレフィックス (デフォルト: "atelier/") */
+  readonly branchPrefix?: string;
+  /** コミットメッセージテンプレート (例: "atelier: {{task}}") */
   readonly commitMessageTemplate?: string;
+  /** PR タイトルテンプレート (例: "[ATELIER] {{task}}") */
+  readonly prTitleTemplate?: string;
   /** PR 本文テンプレート */
   readonly prBodyTemplate?: string;
   /** Slack Webhook URL */

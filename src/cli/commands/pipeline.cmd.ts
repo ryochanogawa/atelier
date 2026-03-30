@@ -21,7 +21,7 @@ import {
 } from "../output.js";
 import type { ConfigPort, VcsPort, LoggerPort } from "../../application/use-cases/run-commission.use-case.js";
 import type { MediumRegistry } from "../../application/services/commission-runner.service.js";
-import type { StudioConfig, MediumConfig } from "../../shared/types.js";
+import type { StudioConfig, MediumConfig, PipelineConfig } from "../../shared/types.js";
 
 /**
  * 簡易 ConfigPort 実装
@@ -96,6 +96,31 @@ function createLoggerPort(): LoggerPort {
 }
 
 /**
+ * studio.yaml から pipeline セクションを読み込む。
+ */
+async function loadPipelineConfig(projectPath: string): Promise<PipelineConfig | undefined> {
+  try {
+    const configPath = path.join(
+      resolveAtelierPath(projectPath),
+      STUDIO_CONFIG_FILE,
+    );
+    const content = await readTextFile(configPath);
+    const parsed = parseYaml(content) as Record<string, unknown>;
+    const pipeline = parsed.pipeline as Record<string, unknown> | undefined;
+    if (!pipeline) return undefined;
+    return {
+      branchPrefix: pipeline.branch_prefix as string | undefined,
+      commitMessageTemplate: pipeline.commit_message_template as string | undefined,
+      prTitleTemplate: pipeline.pr_title_template as string | undefined,
+      prBodyTemplate: pipeline.pr_body_template as string | undefined,
+      slackWebhookUrl: pipeline.slack_webhook_url as string | undefined,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * MediumRegistry を studio.yaml から構築する。
  */
 async function createMediumRegistry(projectPath: string): Promise<MediumRegistry> {
@@ -145,6 +170,7 @@ export function createPipelineCommand(): Command {
         const mediumRegistry = await createMediumRegistry(projectPath);
         const eventBus = createEventBus();
         const prAdapter = opts.autoPr ? await createPRAdapter(projectPath) : undefined;
+        const pipelineConfig = await loadPipelineConfig(projectPath);
 
         const useCase = new PipelineRunUseCase(
           createConfigPort(),
@@ -161,6 +187,7 @@ export function createPipelineCommand(): Command {
           head: opts.head,
           medium: opts.medium,
           task: opts.task,
+          pipelineConfig,
         });
 
         spinner?.stop();

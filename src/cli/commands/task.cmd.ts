@@ -38,10 +38,14 @@ function createConfigPort(): ConfigPort {
       const content = await readTextFile(configPath);
       const parsed = parseYaml(content) as Record<string, unknown>;
       const studio = parsed.studio as Record<string, unknown>;
+      const concurrencyRaw = studio?.concurrency as number | undefined;
       return {
         defaultMedium: (studio?.default_medium as string) ?? "claude-code",
         language: (studio?.language as string) ?? "ja",
         logLevel: (studio?.log_level as StudioConfig["logLevel"]) ?? "info",
+        concurrency: concurrencyRaw != null ? Math.max(1, Math.min(10, concurrencyRaw)) : undefined,
+        baseBranch: (studio?.base_branch as string) ?? undefined,
+        minimalOutput: (studio?.minimal_output as boolean) ?? false,
       };
     },
     async loadMediaConfig(
@@ -228,13 +232,27 @@ export function createTaskCommand(): Command {
   task
     .command("run")
     .description("キュー内のタスクを一括実行する")
-    .option("--concurrency <number>", "最大並列実行数", "1")
+    .option("--concurrency <number>", "最大並列実行数（studio.yaml のデフォルトを上書き）")
     .option("--auto-pr", "実行完了後に自動で PR を作成する", false)
     .option("--draft", "PR をドラフトとして作成する", false)
-    .option("--base <branch>", "PR のベースブランチ", "main")
+    .option("--base <branch>", "PR のベースブランチ")
     .action(async (opts) => {
       const projectPath = process.cwd();
-      const concurrency = Math.max(1, parseInt(opts.concurrency, 10) || 1);
+
+      // studio.yaml から concurrency / base_branch デフォルト値を取得
+      let configConcurrency = 1;
+      let configBaseBranch = "main";
+      try {
+        const cfgPort = createConfigPort();
+        const studioConfig = await cfgPort.loadStudioConfig(projectPath);
+        configConcurrency = studioConfig.concurrency ?? 1;
+        configBaseBranch = studioConfig.baseBranch ?? "main";
+      } catch {
+        // 設定ファイルがない場合はデフォルト値を使用
+      }
+      const concurrency = opts.concurrency
+        ? Math.max(1, parseInt(opts.concurrency, 10) || 1)
+        : configConcurrency;
       const spinner = ora(
         concurrency > 1
           ? `キュー内のタスクを並列実行中 (concurrency=${concurrency})...`
@@ -313,7 +331,7 @@ export function createTaskCommand(): Command {
                   errors: [],
                 },
                 {
-                  base: opts.base ?? "main",
+                  base: opts.base ?? configBaseBranch,
                   head: detail.branch!,
                   draft: opts.draft,
                   taskDescription: detail.task.description,

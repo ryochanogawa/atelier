@@ -45,6 +45,9 @@ export const StrokeYamlSchema = z.object({
   depends_on: z.array(z.string()).optional(),
   contract: z.string().optional(),
   knowledge: z.array(z.string()).optional(),
+  policy: z.string().optional(),
+  model: z.string().optional(),
+  allowed_tools: z.array(z.string()).optional(),
   parallel: z.array(ParallelSubStrokeYamlSchema).optional(),
 }).refine(
   (data) => data.parallel !== undefined || (data.palette !== undefined && data.instruction !== undefined),

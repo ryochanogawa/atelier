@@ -8,6 +8,7 @@ import ora from "ora";
 import chalk from "chalk";
 import path from "node:path";
 import fs from "node:fs/promises";
+import readline from "node:readline";
 import { parse as parseYaml } from "yaml";
 import { CommissionRunUseCase } from "../../application/use-cases/run-commission.use-case.js";
 import { createEventBus } from "../../infrastructure/event-bus/event-emitter.js";
@@ -217,6 +218,29 @@ async function runCommission(
 }
 
 // ──────────────────────────────────────────────────
+// 対話入力ヘルパー
+// ──────────────────────────────────────────────────
+
+/** 対話的に複数行の説明文を入力させる（空行で確定） */
+async function promptDescription(): Promise<string> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const lines: string[] = [];
+
+  console.log(chalk.cyan("説明を入力してください（空行で確定）:"));
+
+  return new Promise((resolve) => {
+    rl.on("line", (line) => {
+      if (line.trim() === "" && lines.length > 0) {
+        rl.close();
+        resolve(lines.join("\n"));
+      } else if (line.trim() !== "" || lines.length > 0) {
+        lines.push(line);
+      }
+    });
+  });
+}
+
+// ──────────────────────────────────────────────────
 // コマンド定義
 // ──────────────────────────────────────────────────
 
@@ -224,12 +248,21 @@ export function createSpecCommand(): Command {
   const spec = new Command("spec")
     .description("仕様書（Spec）の管理・生成");
 
-  // ── spec create <description> ──────────────────
+  // ── spec create [description] ──────────────────
   spec
-    .command("create <description>")
-    .description("説明文から仕様書を作成し requirements.md を生成する")
+    .command("create [description]")
+    .description("説明文から仕様書を作成し requirements.md を生成する（引数省略で対話入力）")
     .option("--medium <name>", "使用する Medium を指定")
-    .action(async (description: string, _opts) => {
+    .action(async (description: string | undefined, _opts) => {
+      // 引数がない場合は対話入力モード
+      if (!description) {
+        description = await promptDescription();
+        if (!description.trim()) {
+          printError("説明文が入力されませんでした");
+          process.exitCode = 1;
+          return;
+        }
+      }
       const projectPath = process.cwd();
       const spinner = ora("仕様書を作成中...").start();
 

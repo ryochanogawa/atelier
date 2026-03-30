@@ -21,6 +21,19 @@ export const StrokeConfigSchema = z.object({
   dependsOn: z.array(z.string()).optional(),
 });
 
+export const PaletteProviderConfigSchema = z.object({
+  medium: z.string().min(1).optional(),
+  model: z.string().min(1).optional(),
+});
+
+export const PipelineConfigSchema = z.object({
+  branch_prefix: z.string().optional(),
+  commit_message_template: z.string().optional(),
+  pr_title_template: z.string().optional(),
+  pr_body_template: z.string().optional(),
+  slack_webhook_url: z.string().url().optional(),
+});
+
 export const StudioConfigSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
@@ -30,6 +43,11 @@ export const StudioConfigSchema = z.object({
   policies: z.array(z.string()).optional(),
   outputDir: z.string().default(".atelier/output"),
   maxConcurrency: z.number().int().positive().default(1),
+  concurrency: z.number().int().min(1).max(10).default(1),
+  baseBranch: z.string().optional(),
+  minimalOutput: z.boolean().default(false),
+  pipeline: PipelineConfigSchema.optional(),
+  palette_providers: z.record(z.string(), PaletteProviderConfigSchema).optional(),
 });
 
 export type StudioConfig = z.infer<typeof StudioConfigSchema>;
