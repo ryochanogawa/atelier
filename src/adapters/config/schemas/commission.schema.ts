@@ -23,6 +23,12 @@ export const TransitionYamlSchema = z.object({
   next: z.string().min(1),
   max_retries: z.number().int().min(0).optional(),
   on_max_retries: z.enum(["fail", "skip", "continue"]).optional(),
+  appendix: z.string().optional(),
+});
+
+export const QualityGateYamlSchema = z.object({
+  name: z.string().min(1),
+  condition: z.string().min(1),
 });
 
 export const ParallelSubStrokeYamlSchema = z.object({
@@ -49,6 +55,8 @@ export const StrokeYamlSchema = z.object({
   model: z.string().optional(),
   allowed_tools: z.array(z.string()).optional(),
   parallel: z.array(ParallelSubStrokeYamlSchema).optional(),
+  permission_mode: z.enum(["readonly", "edit", "full"]).optional(),
+  quality_gates: z.array(QualityGateYamlSchema).optional(),
 }).refine(
   (data) => data.parallel !== undefined || (data.palette !== undefined && data.instruction !== undefined),
   { message: "Either 'parallel' or both 'palette' and 'instruction' must be provided" },
@@ -63,6 +71,7 @@ export const CommissionSchema = z.object({
   critique: CritiqueSchema.optional(),
   outputFormat: z.enum(["text", "json", "markdown"]).default("text"),
   strokes: z.array(StrokeYamlSchema).optional(),
+  initial_stroke: z.string().optional(),
 });
 
 export type Commission = z.infer<typeof CommissionSchema>;

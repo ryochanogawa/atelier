@@ -15,7 +15,7 @@ import { CreatePRUseCase } from "../../application/use-cases/create-pr.use-case.
 import { createPRAdapter } from "../../adapters/vcs/create-pr-adapter.js";
 import type { ConfigPort, VcsPort, LoggerPort } from "../../application/use-cases/run-commission.use-case.js";
 import type { MediumRegistry } from "../../application/services/commission-runner.service.js";
-import type { StudioConfig, MediumConfig, PaletteProviderConfig } from "../../shared/types.js";
+import type { StudioConfig, MediumConfig, PaletteProviderConfig, NotificationConfig, RuntimeConfig } from "../../shared/types.js";
 import { createEventBus } from "../../infrastructure/event-bus/event-emitter.js";
 import { readTextFile } from "../../infrastructure/fs/file-system.js";
 import { resolveAtelierPath, generateRunId } from "../../shared/utils.js";
@@ -50,11 +50,32 @@ function createConfigPort(): ConfigPort {
         };
       }
 
+      // notification の読み込み
+      const rawNotification = parsed.notification as Record<string, unknown> | undefined;
+      const notification: NotificationConfig | undefined = rawNotification
+        ? {
+            sound: (rawNotification.sound as boolean | undefined),
+            events: rawNotification.events as NotificationConfig["events"],
+          }
+        : undefined;
+
+      // runtime の読み込み
+      const rawRuntime = parsed.runtime as Record<string, unknown> | undefined;
+      const runtime: RuntimeConfig | undefined = rawRuntime
+        ? {
+            prepare: rawRuntime.prepare as string[] | undefined,
+          }
+        : undefined;
+
       return {
         defaultMedium: (studio?.default_medium as string) ?? "claude-code",
         language: (studio?.language as string) ?? "ja",
         logLevel: (studio?.log_level as StudioConfig["logLevel"]) ?? "info",
         ...(Object.keys(paletteProviders).length > 0 ? { paletteProviders } : {}),
+        allowGitHooks: (studio?.allow_git_hooks as boolean | undefined) ?? false,
+        worktreeDir: studio?.worktree_dir as string | undefined,
+        ...(notification ? { notification } : {}),
+        ...(runtime ? { runtime } : {}),
       };
     },
     async loadMediaConfig(
@@ -82,8 +103,10 @@ function createConfigPort(): ConfigPort {
 /**
  * Git worktree ベースの VcsPort 実装。
  * git リポジトリでない場合はフォールバックして basePath をそのまま返す。
+ * @param worktreeDir studio.yaml の worktree_dir で上書き可能。未指定時は ".atelier/worktrees"。
  */
-function createVcsPort(): VcsPort {
+function createVcsPort(worktreeDir?: string): VcsPort {
+  const worktreeBaseDir = worktreeDir ?? path.join(".atelier", "worktrees");
   return {
     async createWorktree(basePath: string, branchName: string): Promise<string> {
       const git = simpleGit(basePath);
@@ -106,7 +129,7 @@ function createVcsPort(): VcsPort {
 
       // worktree パスを決定
       const safeName = branchName.replace(/\//g, "-");
-      const worktreePath = path.join(basePath, ".atelier", "worktrees", safeName);
+      const worktreePath = path.join(basePath, worktreeBaseDir, safeName);
 
       // 既に worktree が存在する場合はそのまま返す
       try {
@@ -204,6 +227,15 @@ export async function executeTask(
 ): Promise<void> {
   const projectPath = process.cwd();
 
+  // studio.yaml から設定を読み込み（worktreeDir 等の新設定項目を取得）
+  const configPort = createConfigPort();
+  let studioConfig: StudioConfig | undefined;
+  try {
+    studioConfig = await configPort.loadStudioConfig(projectPath);
+  } catch {
+    // 設定読み込み失敗時はデフォルト値で続行
+  }
+
   if (opts.direct) {
     // --direct モード: Commission を経由せず直接実行
     const spinner = ora("タスクを実行中...").start();
@@ -212,7 +244,7 @@ export async function executeTask(
       // worktree を作成してその中で実行
       const runId = generateRunId();
       const branchName = `atelier/${runId}`;
-      const vcsPort = createVcsPort();
+      const vcsPort = createVcsPort(studioConfig?.worktreeDir);
       let worktreePath = projectPath;
       let worktreeCreated = false;
 
@@ -332,9 +364,9 @@ export async function executeTask(
     try {
       const mediumRegistry = await createMediumRegistry(projectPath);
       const eventBus = createEventBus();
-      const vcsPort = opts.skipGit ? createNoopVcsPort() : createVcsPort();
+      const vcsPort = opts.skipGit ? createNoopVcsPort() : createVcsPort(studioConfig?.worktreeDir);
       const useCase = new CommissionRunUseCase(
-        createConfigPort(),
+        configPort,
         vcsPort,
         createLoggerPort(),
         mediumRegistry,

@@ -55,6 +55,18 @@ export interface ArpeggioConfig {
   readonly retryDelayMs: number;
 }
 
+/** Quality Gate 定義 */
+export interface QualityGate {
+  readonly name: string;
+  readonly condition: string;  // 例: "tests_pass", "no_errors", "coverage_above_80"
+}
+
+/** Output Contract 定義（複数ファイル出力） */
+export interface OutputContract {
+  readonly name: string;     // ファイル名（例: "plan.md"）
+  readonly format?: string;  // Contract名 or インラインフォーマット
+}
+
 export interface StrokeDefinition {
   readonly name: string;
   readonly palette: string;
@@ -74,6 +86,12 @@ export interface StrokeDefinition {
   readonly policy?: string;
   readonly model?: string;
   readonly allowedTools?: readonly string[];
+  /** 権限モード: readonly/edit/full（allowEditの拡張） */
+  readonly permissionMode?: "readonly" | "edit" | "full";
+  /** stroke完了後の品質チェック条件 */
+  readonly qualityGates?: readonly QualityGate[];
+  /** 複数ファイル出力契約（report_dir 配下に出力） */
+  readonly outputContracts?: readonly OutputContract[];
 }
 
 export class Stroke {
@@ -95,6 +113,9 @@ export class Stroke {
   readonly policy?: string;
   readonly model?: string;
   readonly allowedTools?: readonly string[];
+  readonly permissionMode?: "readonly" | "edit" | "full";
+  readonly qualityGates?: readonly QualityGate[];
+  readonly outputContracts?: readonly OutputContract[];
 
   private _status: StrokeStatus;
 
@@ -129,6 +150,13 @@ export class Stroke {
     this.model = definition.model;
     this.allowedTools = definition.allowedTools
       ? Object.freeze([...definition.allowedTools])
+      : undefined;
+    this.permissionMode = definition.permissionMode;
+    this.qualityGates = definition.qualityGates
+      ? Object.freeze(definition.qualityGates.map(g => Object.freeze({ ...g })))
+      : undefined;
+    this.outputContracts = definition.outputContracts
+      ? Object.freeze(definition.outputContracts.map(c => Object.freeze({ ...c })))
       : undefined;
     this._status = StrokeStatus.Pending;
   }

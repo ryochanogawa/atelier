@@ -10,6 +10,8 @@ export interface Transition {
   readonly next: string;
   readonly maxRetries: number;
   readonly onMaxRetries: OnMaxRetriesAction;
+  /** 遷移発火時に次strokeのinstructionに追加するテキスト */
+  readonly appendix?: string;
 }
 
 export function createTransition(params: {
@@ -17,6 +19,7 @@ export function createTransition(params: {
   next: string;
   maxRetries?: number;
   onMaxRetries?: OnMaxRetriesAction;
+  appendix?: string;
 }): Transition {
   if (!params.next.trim()) {
     throw new Error("Transition target (next) must not be empty");
@@ -26,5 +29,6 @@ export function createTransition(params: {
     next: params.next,
     maxRetries: params.maxRetries ?? 3,
     onMaxRetries: params.onMaxRetries ?? "fail",
+    appendix: params.appendix,
   });
 }

@@ -93,6 +93,8 @@ export class CommissionRunnerService {
   private _strokeIteration = 0;
   /** ループモニターの max threshold（テンプレート変数 {{max_iterations}} 用） */
   private _maxIterations = "";
+  /** レポート出力先ディレクトリ（テンプレート変数 {{report_dir}} 用） */
+  private _reportDir = "";
 
   constructor(deps: CommissionRunnerDeps) {
     this.deps = deps;
@@ -103,7 +105,14 @@ export class CommissionRunnerService {
     runId: string,
     options: RunOptions,
   ): Promise<CommissionRunResult> {
+    // レポート出力先ディレクトリを設定（テンプレート変数 {{report_dir}} 用）
+    this._reportDir = `.atelier/reports/${runId}/`;
+
     const canvas = new Canvas();
+    // タスク説明文を Canvas に自動注入（{{task}} テンプレート変数として利用可能）
+    if (options.task) {
+      canvas.set("task", options.task);
+    }
     // 初期値を Canvas に注入（要件定義等）
     if (options.initialCanvas) {
       for (const [key, value] of Object.entries(options.initialCanvas)) {
@@ -135,6 +144,7 @@ export class CommissionRunnerService {
             next: t.next,
             maxRetries: t.max_retries ?? 3,
             onMaxRetries: t.on_max_retries ?? "fail",
+            appendix: t.appendix,
           })),
           dependsOn: sd.depends_on ? [...sd.depends_on] : [],
           contract: sd.contract ?? "",
@@ -176,6 +186,9 @@ export class CommissionRunnerService {
           policy: sd.policy,
           model: resolvePaletteModel(sd.palette, sd.model),
           allowedTools: sd.allowed_tools ? [...sd.allowed_tools] : undefined,
+          permissionMode: sd.permission_mode,
+          qualityGates: sd.quality_gates ? sd.quality_gates.map(g => ({ name: g.name, condition: g.condition })) : undefined,
+          outputContracts: sd.output_contracts ? sd.output_contracts.map(c => ({ name: c.name, format: c.format })) : undefined,
         }),
     );
 
@@ -189,7 +202,10 @@ export class CommissionRunnerService {
     const strokeExecCounts = new Map<string, number>();
     const loopMonitors = commission.loop_monitors ?? [];
 
-    let currentStroke: Stroke | undefined = strokes[0];
+    // initial_stroke が指定されている場合はそのstrokeから開始
+    let currentStroke: Stroke | undefined = commission.initial_stroke
+      ? strokes.find((s) => s.name === commission.initial_stroke) ?? strokes[0]
+      : strokes[0];
 
     while (currentStroke && !currentStroke.isTerminal) {
       // ループ先頭で確定参照を取得（TypeScript narrowing 維持用）
@@ -542,8 +558,11 @@ export class CommissionRunnerService {
     // stroke 固有のツールホワイトリスト（allowedTools が明示指定されている場合はそちらを優先）
     if (stroke.allowedTools && stroke.allowedTools.length > 0) {
       args.push("--allowedTools", ...stroke.allowedTools);
+    } else if (stroke.permissionMode && !args.includes("--allowedTools")) {
+      // permission_mode による許可ツール決定
+      args.push("--allowedTools", ...this.resolvePermissionModeTools(stroke.permissionMode));
     } else if (stroke.allowEdit && !args.includes("--allowedTools")) {
-      // allow_edit の場合、ファイル編集ツールを許可
+      // allow_edit の場合、ファイル編集ツールを許可（後方互換）
       args.push("--allowedTools", "Edit", "Write", "Read", "Glob", "Grep", "Bash");
     }
 
@@ -609,6 +628,12 @@ export class CommissionRunnerService {
     for (const outputKey of stroke.outputs) {
       canvas.set(outputKey, result.stdout);
     }
+
+    // Quality Gates チェック
+    this.checkQualityGates(stroke, canvas);
+
+    // Output Contracts: 複数ファイル出力の定義がある場合、ファイルパスを Canvas に保存
+    await this.processOutputContracts(stroke, canvas, result.stdout);
 
     stroke.transitionTo(StrokeStatus.Completed);
   }
@@ -1183,7 +1208,13 @@ export class CommissionRunnerService {
 
     // 3. Instruction: stroke の指示（ファイル参照の場合は外部ファイルから読み込み）
     const resolvedInstruction = await this.resolveInstruction(stroke.instruction, canvas);
-    parts.push(resolvedInstruction);
+    // appendix が Canvas に保存されている場合、instruction の末尾に追加
+    const appendix = canvas.get<string>("_appendix");
+    if (appendix) {
+      parts.push(`${resolvedInstruction}\n\n${appendix}`);
+    } else {
+      parts.push(resolvedInstruction);
+    }
 
     // 4. Contract: 出力契約のフォーマットを配置（Instruction と Policy の間）
     if (stroke.contract) {
@@ -1416,6 +1447,7 @@ export class CommissionRunnerService {
       iteration: String(this._iteration),
       max_iterations: this._maxIterations,
       stroke_iteration: String(this._strokeIteration),
+      report_dir: this._reportDir,
     };
 
     return template.replace(/\{\{(\w+)\}\}/g, (_match: string, key: string) => {
@@ -1608,6 +1640,87 @@ export class CommissionRunnerService {
     return undefined;
   }
 
+  /**
+   * permission_mode に基づく許可ツールリストを返す。
+   */
+  private resolvePermissionModeTools(mode: "readonly" | "edit" | "full"): string[] {
+    switch (mode) {
+      case "readonly":
+        return ["Read", "Glob", "Grep"];
+      case "edit":
+        return ["Edit", "Write", "Read", "Glob", "Grep"];
+      case "full":
+        return ["Edit", "Write", "Read", "Glob", "Grep", "Bash"];
+    }
+  }
+
+  /**
+   * Quality Gates チェック。
+   * stroke の quality_gates が定義されている場合、Canvas 上の値を参照して条件を検証する。
+   * 条件を満たさない場合はエラーログを出力する（実行は中断しない）。
+   */
+  private checkQualityGates(stroke: Stroke, canvas: Canvas): void {
+    if (!stroke.qualityGates || stroke.qualityGates.length === 0) {
+      return;
+    }
+
+    for (const gate of stroke.qualityGates) {
+      const value = canvas.get<string>(gate.condition);
+      if (value === undefined || value === "" || value === "false" || value === "fail") {
+        console.error(
+          `[quality-gate:${stroke.name}] FAILED: "${gate.name}" (condition: ${gate.condition}, value: ${value ?? "undefined"})`,
+        );
+        // Canvas にゲート結果を記録
+        canvas.set(`${stroke.name}_quality_gate_${gate.name}`, "failed");
+      } else {
+        canvas.set(`${stroke.name}_quality_gate_${gate.name}`, "passed");
+      }
+    }
+  }
+
+  /**
+   * Output Contracts の処理。
+   * stroke に output_contracts が定義されている場合、各 contract のファイルパスを Canvas に保存する。
+   * report_dir 配下にファイルを配置する想定で、パスを `{stroke_name}_report_{file_name}` キーで Canvas に格納する。
+   * 簡易実装: AI の出力全体を各ファイルに書き出す。
+   */
+  private async processOutputContracts(
+    stroke: Stroke,
+    canvas: Canvas,
+    output: string,
+  ): Promise<void> {
+    if (!stroke.outputContracts || stroke.outputContracts.length === 0) {
+      return;
+    }
+
+    for (const contract of stroke.outputContracts) {
+      const filePath = path.join(this._reportDir, contract.name);
+
+      // format の解決: Contract 名であれば YAML から読み込み、なければインラインとして扱う
+      let resolvedFormat: string | null = null;
+      if (contract.format) {
+        const contractData = await this.loadContract(contract.format);
+        resolvedFormat = contractData?.format ?? contract.format;
+      }
+
+      // ファイルパスを Canvas に保存
+      // キー: {stroke_name}_report_{file_name}（ドットをアンダースコアに置換）
+      const safeFileName = contract.name.replace(/\./g, "_");
+      const canvasKey = `${stroke.name}_report_${safeFileName}`;
+      canvas.set(canvasKey, filePath);
+
+      // 実際のファイル書き出し（report_dir 配下）
+      const absolutePath = path.resolve(this.deps.cwd, filePath);
+      const dir = path.dirname(absolutePath);
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(absolutePath, output, "utf-8");
+
+      console.error(
+        `[output-contract:${stroke.name}] wrote ${contract.name} -> ${filePath}${resolvedFormat ? ` (format: ${contract.format})` : ""}`,
+      );
+    }
+  }
+
   private resolveNextStroke(
     current: Stroke,
     strokes: readonly Stroke[],
@@ -1616,11 +1729,18 @@ export class CommissionRunnerService {
     // トランジション条件を評価
     for (const transition of current.transitions) {
       if (this.evaluateCondition(transition.condition, canvas)) {
+        // appendix がある場合、Canvas に _appendix として保存
+        if (transition.appendix) {
+          canvas.set("_appendix", transition.appendix);
+        } else {
+          canvas.delete("_appendix");
+        }
         return strokes.find((s) => s.name === transition.next);
       }
     }
 
-    // デフォルト: 次のストローク
+    // デフォルト: 次のストローク（appendix クリア）
+    canvas.delete("_appendix");
     const currentIndex = strokes.indexOf(current as Stroke);
     if (currentIndex >= 0 && currentIndex < strokes.length - 1) {
       return strokes[currentIndex + 1];

@@ -26,6 +26,21 @@ export const PaletteProviderConfigSchema = z.object({
   model: z.string().min(1).optional(),
 });
 
+export const NotificationEventsSchema = z.object({
+  commission_complete: z.boolean().default(true),
+  commission_abort: z.boolean().default(true),
+  task_complete: z.boolean().default(false),
+});
+
+export const NotificationConfigSchema = z.object({
+  sound: z.boolean().default(true),
+  events: NotificationEventsSchema.optional(),
+});
+
+export const RuntimeConfigSchema = z.object({
+  prepare: z.array(z.string()).optional(),
+});
+
 export const PipelineConfigSchema = z.object({
   branch_prefix: z.string().optional(),
   commit_message_template: z.string().optional(),
@@ -48,6 +63,10 @@ export const StudioConfigSchema = z.object({
   minimalOutput: z.boolean().default(false),
   pipeline: PipelineConfigSchema.optional(),
   palette_providers: z.record(z.string(), PaletteProviderConfigSchema).optional(),
+  allowGitHooks: z.boolean().default(false),
+  worktreeDir: z.string().optional(),
+  notification: NotificationConfigSchema.optional(),
+  runtime: RuntimeConfigSchema.optional(),
 });
 
 export type StudioConfig = z.infer<typeof StudioConfigSchema>;

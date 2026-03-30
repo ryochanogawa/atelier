@@ -58,12 +58,33 @@ export interface RunOptions {
   readonly verbose?: boolean;
   /** Canvas に事前注入するキーバリュー（要件定義等） */
   readonly initialCanvas?: Readonly<Record<string, string>>;
+  /** タスク説明文（Canvas の "task" キーとして自動注入される） */
+  readonly task?: string;
 }
 
 /** Palette ごとの Provider 設定 */
 export interface PaletteProviderConfig {
   readonly medium?: string;
   readonly model?: string;
+}
+
+/** 通知イベント設定 */
+export interface NotificationEventsConfig {
+  readonly commission_complete?: boolean;
+  readonly commission_abort?: boolean;
+  readonly task_complete?: boolean;
+}
+
+/** 通知設定 */
+export interface NotificationConfig {
+  readonly sound?: boolean;
+  readonly events?: NotificationEventsConfig;
+}
+
+/** ランタイム設定 */
+export interface RuntimeConfig {
+  /** Commission 実行前に走る準備スクリプト */
+  readonly prepare?: readonly string[];
 }
 
 /** Studio 設定 */
@@ -79,6 +100,14 @@ export interface StudioConfig {
   readonly minimalOutput?: boolean;
   /** Palette ごとの medium/model オーバーライド */
   readonly paletteProviders?: Readonly<Record<string, PaletteProviderConfig>>;
+  /** Git操作時にhooksを許可するか（デフォルト: false） */
+  readonly allowGitHooks?: boolean;
+  /** worktreeの作成先ディレクトリ（デフォルト: ".atelier/worktrees/"） */
+  readonly worktreeDir?: string;
+  /** 通知設定 */
+  readonly notification?: NotificationConfig;
+  /** ランタイム設定 */
+  readonly runtime?: RuntimeConfig;
 }
 
 /** Medium 設定 */
@@ -102,6 +131,8 @@ export interface CommissionDefinition {
   readonly description: string;
   readonly strokes: readonly StrokeDefinitionYaml[];
   readonly loop_monitors?: readonly LoopMonitorYaml[];
+  /** 指定されたstrokeから実行を開始する。未指定時は先頭stroke */
+  readonly initial_stroke?: string;
 }
 
 /** Team Leader 定義 (YAML由来) */
@@ -143,12 +174,26 @@ export interface ParallelStrokeYaml {
   readonly contract?: string;
 }
 
+/** Quality Gate 定義 (YAML由来) */
+export interface QualityGateYaml {
+  readonly name: string;
+  readonly condition: string;
+}
+
+/** Output Contract 定義 (YAML由来) — 複数ファイル出力 */
+export interface OutputContractYaml {
+  readonly name: string;      // ファイル名（例: "plan.md"）
+  readonly format?: string;   // Contract名 or インラインフォーマット
+}
+
 /** Stroke 定義 (YAML由来) */
 export interface StrokeDefinitionYaml {
   readonly name: string;
   readonly palette: string;
   readonly medium?: string;
   readonly allow_edit?: boolean;
+  /** 権限モード: readonly/edit/full（allow_editの拡張） */
+  readonly permission_mode?: "readonly" | "edit" | "full";
   readonly instruction: string;
   readonly inputs?: readonly string[];
   readonly outputs?: readonly string[];
@@ -166,6 +211,10 @@ export interface StrokeDefinitionYaml {
   };
   readonly team_leader?: TeamLeaderDefinitionYaml;
   readonly parallel?: readonly ParallelStrokeYaml[];
+  /** stroke完了後の品質チェック条件 */
+  readonly quality_gates?: readonly QualityGateYaml[];
+  /** 複数ファイル出力契約（report_dir 配下に出力） */
+  readonly output_contracts?: readonly OutputContractYaml[];
 }
 
 /** Pipeline テンプレート変数 */
@@ -200,4 +249,6 @@ export interface TransitionDefinitionYaml {
   readonly next: string;
   readonly max_retries?: number;
   readonly on_max_retries?: "fail" | "skip" | "continue";
+  /** 遷移発火時に次strokeのinstructionに追加するテキスト */
+  readonly appendix?: string;
 }

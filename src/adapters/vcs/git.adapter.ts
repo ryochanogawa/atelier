@@ -9,25 +9,29 @@ import { join } from "node:path";
 import { rm } from "node:fs/promises";
 import type { VcsPort } from "./types.js";
 
-const WORKTREE_BASE_DIR = ".atelier/studios";
+const DEFAULT_WORKTREE_BASE_DIR = ".atelier/studios";
 const DEFAULT_BRANCH_PREFIX = "atelier/";
 
 export class GitAdapter implements VcsPort {
   private readonly git: SimpleGit;
   private readonly branchPrefix: string;
+  private readonly worktreeBaseDir: string;
 
-  constructor(repoPath?: string, branchPrefix?: string) {
+  constructor(repoPath?: string, branchPrefix?: string, worktreeDir?: string) {
     this.git = simpleGit(repoPath);
     this.branchPrefix = branchPrefix ?? DEFAULT_BRANCH_PREFIX;
+    this.worktreeBaseDir = worktreeDir ?? DEFAULT_WORKTREE_BASE_DIR;
   }
 
   /**
-   * 指定ブランチのworktreeを `.atelier/studios/<id>/` に作成する。
+   * 指定ブランチのworktreeを作成する。
+   * worktreeDir が指定されていればそのディレクトリ配下に、
+   * 未指定時は `.atelier/studios/<id>/` に作成する。
    * @returns worktreeの絶対パス
    */
   async createWorktree(branch: string, basePath: string): Promise<string> {
     const id = randomUUID().slice(0, 8);
-    const worktreePath = join(basePath, WORKTREE_BASE_DIR, id);
+    const worktreePath = join(basePath, this.worktreeBaseDir, id);
 
     await this.git.raw(["worktree", "add", worktreePath, branch]);
 
