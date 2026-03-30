@@ -451,11 +451,19 @@ export function createSpecCommand(): Command {
         const specData = await loadSpecJson(dir);
         const dirName = path.basename(dir);
 
-        // design.md があれば canvas に追加
-        const canvas: Record<string, string> = { tasks, spec_dir: dirName };
+        // 仕様書を canvas にセット
+        const canvas: Record<string, string> = {
+          task: `以下のタスク一覧に基づいて実装してください:\n\n${tasks}`,
+          tasks,
+          spec_dir: dirName,
+        };
         const designPath = path.join(dir, "design.md");
         if (await fileExists(designPath)) {
           canvas.design = await readTextFile(designPath);
+        }
+        const reqPath = path.join(dir, "requirements.md");
+        if (await fileExists(reqPath)) {
+          canvas.requirements = await readTextFile(reqPath);
         }
 
         await runCommission(projectPath, "default", canvas);
