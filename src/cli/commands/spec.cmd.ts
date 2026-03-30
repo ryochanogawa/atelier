@@ -70,7 +70,7 @@ async function loadAllSpecs(projectPath: string): Promise<SpecJson[]> {
   const dirs = await listDirs(dir);
   const specs: SpecJson[] = [];
   for (const d of dirs) {
-    const jsonPath = path.join(d, "spec.json");
+    const jsonPath = path.join(dir, d, "spec.json");
     if (await fileExists(jsonPath)) {
       try {
         const content = await readTextFile(jsonPath);
