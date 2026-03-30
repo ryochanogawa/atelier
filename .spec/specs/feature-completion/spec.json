@@ -1,0 +1,23 @@
+{
+  "feature_name": "feature-completion",
+  "project_description": "ATELIERの未完成機能を完成させる。Conductor二重実装の統合、TraceabilityServiceの完成、未使用サービス（RequirementsAnalyzer/TestAnalyzer）のCommission統合、serve.cmd/watch.cmd/pipeline.cmdの完成を対象とする。",
+  "created_at": "2026-03-30T00:00:00Z",
+  "updated_at": "2026-03-30T00:00:00Z",
+  "language": "japanese",
+  "phase": "implemented",
+  "approvals": {
+    "requirements": {
+      "generated": true,
+      "approved": true
+    },
+    "design": {
+      "generated": true,
+      "approved": true
+    },
+    "tasks": {
+      "generated": true,
+      "approved": true
+    }
+  },
+  "ready_for_implementation": false
+}

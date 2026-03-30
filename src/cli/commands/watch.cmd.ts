@@ -230,7 +230,7 @@ async function executeOneTask(
   } catch (error) {
     queue.markFailed(task.id);
     await store.save(queue.list());
-    console.error(`[ERROR] タスク実行エラー: ${error instanceof Error ? error.message : String(error)}`);
+    printError(`タスク実行エラー: ${error instanceof Error ? error.message : String(error)}`);
     return false;
   }
 }

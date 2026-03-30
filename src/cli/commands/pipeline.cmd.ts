@@ -190,7 +190,7 @@ export function createPipelineCommand(): Command {
         const errorMessage = error instanceof Error ? error.message : String(error);
 
         if (opts.json || ciMode) {
-          console.log(JSON.stringify({ error: errorMessage }, null, 2));
+          console.error(JSON.stringify({ error: errorMessage }, null, 2));
         } else {
           printError(errorMessage);
         }

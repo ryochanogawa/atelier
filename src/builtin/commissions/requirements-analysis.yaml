@@ -48,6 +48,7 @@ strokes:
 
   - name: validate
     palette: requirements-analyst
+    knowledge: [requirements-validation]
     instruction: |
       構造化された要件を検証してください。
       以下の観点でチェックしてください：

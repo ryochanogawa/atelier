@@ -19,6 +19,7 @@ import {
   ensureDir,
   listDirs,
 } from "../../infrastructure/fs/file-system.js";
+import { extractTraceFromSpecs } from "../../application/services/spec-trace-extractor.js";
 import { resolveAtelierPath, generateRunId } from "../../shared/utils.js";
 import { STUDIO_CONFIG_FILE } from "../../shared/constants.js";
 import {
@@ -531,6 +532,76 @@ export function createSpecCommand(): Command {
             console.log(`  ${chalk.cyan(f)}`);
           }
           console.log();
+        }
+
+        // ── トレーサビリティ表示 ──
+        const reqPath = path.join(dir, "requirements.md");
+        const designPath = path.join(dir, "design.md");
+        const tasksPath = path.join(dir, "tasks.md");
+
+        const hasReq = await fileExists(reqPath);
+
+        if (hasReq) {
+          const reqContent = await readTextFile(reqPath);
+          const designContent = (await fileExists(designPath))
+            ? await readTextFile(designPath)
+            : null;
+          const tasksContent = (await fileExists(tasksPath))
+            ? await readTextFile(tasksPath)
+            : null;
+
+          const trace = extractTraceFromSpecs(reqContent, designContent, tasksContent);
+
+          if (trace.requirements.length > 0) {
+            console.log(chalk.bold("=== トレーサビリティ ==="));
+            console.log();
+
+            // 各要件のカバー状況を判定
+            const designCoveredIds = new Set(trace.designMappings.map((d) => d.reqId));
+            const taskCoveredIds = new Set<string>();
+            for (const tm of trace.taskMappings) {
+              for (const rid of tm.reqIds) {
+                taskCoveredIds.add(rid);
+              }
+            }
+
+            console.log(chalk.bold("要件カバレッジ:"));
+            const rows = trace.requirements.map((req) => {
+              const hasDesign = designContent !== null
+                ? (designCoveredIds.has(req.id) ? chalk.green("✓") : chalk.dim("-"))
+                : chalk.dim("（未生成）");
+              const hasTask = tasksContent !== null
+                ? (taskCoveredIds.has(req.id) ? chalk.green("✓") : chalk.dim("-"))
+                : chalk.dim("（未生成）");
+              return [req.id, req.name, hasDesign, hasTask];
+            });
+
+            printTable(["要件#", "要件名", "設計", "タスク"], rows);
+            console.log();
+
+            // 未カバー要件の警告
+            const uncovered = trace.requirements.filter((req) => {
+              const inDesign = designContent === null || designCoveredIds.has(req.id);
+              const inTask = tasksContent === null || taskCoveredIds.has(req.id);
+              return !inDesign || !inTask;
+            });
+
+            for (const req of uncovered) {
+              const missingParts: string[] = [];
+              if (designContent !== null && !designCoveredIds.has(req.id)) {
+                missingParts.push("設計");
+              }
+              if (tasksContent !== null && !taskCoveredIds.has(req.id)) {
+                missingParts.push("タスク");
+              }
+              if (missingParts.length > 0) {
+                printWarning(
+                  `未カバー要件: #${req.id} ${req.name}（${missingParts.join("・")}なし）`,
+                );
+              }
+            }
+            console.log();
+          }
         }
       } catch (error) {
         printError(error instanceof Error ? error.message : String(error));

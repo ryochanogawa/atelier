@@ -27,6 +27,8 @@ import {
   getBuiltinKnowledgePath,
 } from "../../builtin/index.js";
 import { runArpeggio } from "./arpeggio-runner.service.js";
+import { runConductor, type ConductorConfig } from "./conductor.service.js";
+import { parseStatusTag } from "../../domain/services/conductor-parser.js";
 
 export interface MediumRegistry {
   getCommand(mediumName: string): { command: string; args: readonly string[] } | undefined;
@@ -685,7 +687,7 @@ export class CommissionRunnerService {
 
         // Conductor ステータス判定（conductor がある場合）
         if (stroke.conductor) {
-          const statusTag = this.extractStatusTag(result.value.output);
+          const statusTag = parseStatusTag(result.value.output);
           subResults.set(subName, statusTag ?? "unknown");
         } else {
           subResults.set(subName, "completed");
@@ -1472,8 +1474,8 @@ export class CommissionRunnerService {
 
   /**
    * Phase 3: Conductor によるステータス判定。
-   * Stroke 実行後の Canvas 出力を conductor Palette に渡し、
-   * [STATUS: xxx] タグを抽出して rules に基づき次の Stroke を決定する。
+   * conductor.service.ts の runConductor() に委譲し、
+   * 結果の ConductorResult に基づいて次の Stroke を決定する。
    * conductor の rules にマッチする遷移先があればその Stroke を返す。
    * マッチしなければ undefined を返し、通常の resolveNextStroke にフォールバックする。
    */
@@ -1484,14 +1486,6 @@ export class CommissionRunnerService {
     runId: string,
   ): Promise<Stroke | undefined> {
     const conductorDef = stroke.conductor!;
-    const paletteName = conductorDef.palette ?? "conductor";
-
-    // conductor Palette を読み込み
-    const palette = await this.loadPalette(paletteName);
-    if (!palette) {
-      console.error(`[conductor] Palette '${paletteName}' not found, skipping Phase 3`);
-      return undefined;
-    }
 
     // Phase 1 の出力（Canvas の値）を収集
     const outputContents: string[] = [];
@@ -1507,112 +1501,40 @@ export class CommissionRunnerService {
       return undefined;
     }
 
-    // conductor にプロンプトを渡して実行
-    const conductorOutput = await this.executeConductor(
-      palette,
+    // conductor.service.ts の runConductor() に委譲
+    const conductorConfig: ConductorConfig = {
+      palette: conductorDef.palette,
+      rules: (conductorDef.rules ?? []).map((r) => ({ condition: r.condition, next: r.next })),
+    };
+
+    const conductorResult = await runConductor(
       outputContents.join("\n\n"),
-      stroke,
-      runId,
+      conductorConfig,
+      this.deps.mediumRegistry,
+      stroke.medium,
+      this.deps.cwd,
+      this.deps.projectPath,
     );
 
-    // [STATUS: xxx] タグを抽出
-    const status = this.extractStatusTag(conductorOutput);
-    if (!status) {
-      console.error(`[conductor] No status tag found in conductor output for stroke '${stroke.name}'`);
+    console.error(`[conductor] Status for '${stroke.name}': ${conductorResult.status}`);
+
+    // Canvas にステータスを保存（後続の transition 条件で参照可能にする）
+    canvas.set(`${stroke.name}_conductor_status`, conductorResult.status);
+
+    // nextStroke が null の場合は通常フローへフォールバック
+    if (conductorResult.nextStroke === null) {
       return undefined;
     }
 
-    console.error(`[conductor] Status for '${stroke.name}': ${status}`);
-
-    // Canvas にステータスを保存（後続の transition 条件で参照可能にする）
-    canvas.set(`${stroke.name}_conductor_status`, status);
-
-    // rules に基づいて次の Stroke を決定
-    const rules = conductorDef.rules ?? [];
-    for (const rule of rules) {
-      if (rule.condition === status) {
-        const nextStroke = strokes.find((s) => s.name === rule.next);
-        if (nextStroke) {
-          console.error(`[conductor] Rule matched: condition='${rule.condition}' -> next='${rule.next}'`);
-          return nextStroke;
-        }
-        console.error(`[conductor] Rule matched but target stroke '${rule.next}' not found`);
-      }
+    // nextStroke 名から Stroke オブジェクトを解決
+    const nextStroke = strokes.find((s) => s.name === conductorResult.nextStroke);
+    if (nextStroke) {
+      console.error(`[conductor] Rule matched: -> next='${conductorResult.nextStroke}'`);
+      return nextStroke;
     }
 
-    // rules にマッチしなければ通常フローへフォールバック
+    console.error(`[conductor] Rule matched but target stroke '${conductorResult.nextStroke}' not found`);
     return undefined;
-  }
-
-  /**
-   * Conductor Palette を Medium で実行し、出力を返す。
-   */
-  private async executeConductor(
-    palette: RawPalette,
-    phaseOutput: string,
-    stroke: Stroke,
-    runId: string,
-  ): Promise<string> {
-    const mediumConfig = this.deps.mediumRegistry.getCommand(stroke.medium);
-    if (!mediumConfig) {
-      throw new Error(`Medium not found for conductor: ${stroke.medium}`);
-    }
-
-    const systemPrompt = palette.persona ?? "";
-    const userPrompt = `以下は前のステップ '${stroke.name}' の実行結果です。ステータスを判定してください。\n\n${phaseOutput}`;
-
-    const fullPrompt = systemPrompt
-      ? `[Persona]\n${systemPrompt}\n\n${userPrompt}`
-      : userPrompt;
-
-    // プロンプトを一時ファイルに書き出し
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "atelier-conductor-"));
-    const promptFile = path.join(tmpDir, "prompt.md");
-    await fs.writeFile(promptFile, fullPrompt, "utf-8");
-
-    const args = [...mediumConfig.args];
-    if (!args.includes("--print") && !args.includes("-p")) {
-      args.unshift("-p");
-    }
-
-    const escapeShell = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
-    const shellCmd = `cat ${escapeShell(promptFile)} | ${mediumConfig.command} ${args.map(escapeShell).join(" ")}`;
-
-    console.error(`[conductor:${stroke.name}] executing conductor...`);
-
-    let result;
-    try {
-      result = await runSubprocess(
-        "bash",
-        ["-c", shellCmd],
-        { cwd: this.deps.cwd, timeout: 300_000 },
-      );
-    } finally {
-      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
-    }
-
-    console.error(`[conductor:${stroke.name}] completed (exitCode=${result.exitCode}, ${result.stdout.length} chars)`);
-
-    if (result.exitCode !== 0) {
-      console.error(`[conductor:${stroke.name}] failed: ${result.stderr.slice(0, 500)}`);
-      return "";
-    }
-
-    return result.stdout;
-  }
-
-  /**
-   * Conductor の出力から [STATUS: xxx] タグを抽出する。
-   * 最後に出現するタグを採用する。
-   */
-  private extractStatusTag(output: string): string | null {
-    const pattern = /\[STATUS:\s*(\w+)\s*\]/g;
-    let lastMatch: string | null = null;
-    let match: RegExpExecArray | null;
-    while ((match = pattern.exec(output)) !== null) {
-      lastMatch = match[1];
-    }
-    return lastMatch;
   }
 
   private resolveNextStroke(
