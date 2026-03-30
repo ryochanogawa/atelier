@@ -241,6 +241,43 @@ async function promptDescription(): Promise<string> {
 }
 
 // ──────────────────────────────────────────────────
+// タスク抽出・更新ヘルパー
+// ──────────────────────────────────────────────────
+
+/** tasks.md から指定タスク番号のブロックを抽出する */
+function extractTask(tasksMd: string, taskNumber: number): string | null {
+  const lines = tasksMd.split("\n");
+  const taskLines: string[] = [];
+  let found = false;
+
+  for (const line of lines) {
+    // タスク行の検出: "- [ ] N." or "- [x] N."
+    const taskMatch = line.match(/^- \[[ x]\] (\d+)\./);
+    if (taskMatch) {
+      if (found) break; // 次のタスクに到達したら終了
+      if (parseInt(taskMatch[1], 10) === taskNumber) {
+        found = true;
+        taskLines.push(line);
+      }
+    } else if (found && (line.startsWith("  ") || line.trim() === "")) {
+      taskLines.push(line);
+    } else if (found) {
+      break;
+    }
+  }
+
+  return found ? taskLines.join("\n").trimEnd() : null;
+}
+
+/** tasks.md の指定タスク番号を完了済み [x] にする */
+function markTaskComplete(tasksMd: string, taskNumber: number): string {
+  return tasksMd.replace(
+    new RegExp(`^- \\[ \\] ${taskNumber}\\.`, "m"),
+    `- [x] ${taskNumber}.`,
+  );
+}
+
+// ──────────────────────────────────────────────────
 // コマンド定義
 // ──────────────────────────────────────────────────
 
@@ -421,7 +458,8 @@ export function createSpecCommand(): Command {
   spec
     .command("implement <id>")
     .description("tasks.md を読み込み implement→test→review Commission を実行する")
-    .action(async (idStr: string) => {
+    .option("--task <number>", "特定のタスク番号のみ実装する")
+    .action(async (idStr: string, opts: { task?: string }) => {
       const projectPath = process.cwd();
       const id = parseInt(idStr, 10);
       if (isNaN(id) || id < 1) {
@@ -430,7 +468,17 @@ export function createSpecCommand(): Command {
         return;
       }
 
-      const spinner = ora(`Spec #${id} の実装を開始中...`).start();
+      const taskNumber = opts.task ? parseInt(opts.task, 10) : undefined;
+      if (opts.task && (isNaN(taskNumber!) || taskNumber! < 1)) {
+        printError("--task には正の整数を指定してください");
+        process.exitCode = 1;
+        return;
+      }
+
+      const label = taskNumber
+        ? `Spec #${id} タスク${taskNumber} の実装を開始中...`
+        : `Spec #${id} の実装を開始中...`;
+      const spinner = ora(label).start();
 
       try {
         const dir = await resolveSpecDir(projectPath, id);
@@ -447,14 +495,32 @@ export function createSpecCommand(): Command {
           return;
         }
 
-        const tasks = await readTextFile(tasksPath);
+        const fullTasks = await readTextFile(tasksPath);
         const specData = await loadSpecJson(dir);
         const dirName = path.basename(dir);
 
+        // --task 指定時: 該当タスクを抽出
+        let taskInstruction: string;
+        let tasksForCanvas: string;
+
+        if (taskNumber) {
+          const extracted = extractTask(fullTasks, taskNumber);
+          if (!extracted) {
+            spinner.fail(`タスク${taskNumber} が見つかりません`);
+            process.exitCode = 1;
+            return;
+          }
+          taskInstruction = `以下のタスク${taskNumber}を実装してください:\n\n${extracted}`;
+          tasksForCanvas = extracted;
+        } else {
+          taskInstruction = `以下のタスク一覧の未完了タスク（[ ]）を全て実装してください:\n\n${fullTasks}`;
+          tasksForCanvas = fullTasks;
+        }
+
         // 仕様書を canvas にセット
         const canvas: Record<string, string> = {
-          task: `以下のタスク一覧に基づいて実装してください:\n\n${tasks}`,
-          tasks,
+          task: taskInstruction,
+          tasks: tasksForCanvas,
           spec_dir: dirName,
         };
         const designPath = path.join(dir, "design.md");
@@ -468,11 +534,22 @@ export function createSpecCommand(): Command {
 
         await runCommission(projectPath, "default", canvas);
 
-        specData.phase = "implemented";
-        await saveSpecJson(dir, specData);
+        // タスク完了後: tasks.md のチェックボックスを更新
+        if (taskNumber) {
+          const updated = markTaskComplete(fullTasks, taskNumber);
+          await writeTextFile(tasksPath, updated);
+        }
+
+        if (!taskNumber) {
+          specData.phase = "implemented";
+          await saveSpecJson(dir, specData);
+        }
 
         spinner.stop();
-        printSuccess(`Spec #${id} の実装完了`);
+        const doneLabel = taskNumber
+          ? `Spec #${id} タスク${taskNumber} の実装完了`
+          : `Spec #${id} の実装完了`;
+        printSuccess(doneLabel);
       } catch (error) {
         spinner.fail("実装に失敗しました");
         printError(error instanceof Error ? error.message : String(error));
