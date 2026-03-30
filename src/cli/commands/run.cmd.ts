@@ -5,7 +5,6 @@
  */
 
 import { Command } from "commander";
-import ora from "ora";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { simpleGit } from "simple-git";
@@ -25,6 +24,7 @@ import {
   printError,
   printInfo,
   printWarning,
+  createSpinner,
 } from "../output.js";
 
 /**
@@ -238,7 +238,7 @@ export async function executeTask(
 
   if (opts.direct) {
     // --direct モード: Commission を経由せず直接実行
-    const spinner = ora("タスクを実行中...").start();
+    const spinner = createSpinner("タスクを実行中...").start();
 
     try {
       // worktree を作成してその中で実行
@@ -317,7 +317,7 @@ export async function executeTask(
 
       // --auto-pr: 実行成功時に自動で PR を作成（direct モード、dry-run時はスキップ）
       if (opts.autoPr && !opts.dryRun && result.status === "completed" && worktreeCreated) {
-        const prSpinner = ora("PR を作成中...").start();
+        const prSpinner = createSpinner("PR を作成中...").start();
         try {
           const prAdapter = await createPRAdapter(projectPath);
           const prUseCase = new CreatePRUseCase(prAdapter, createLoggerPort());
@@ -359,7 +359,7 @@ export async function executeTask(
   } else {
     // Commission 経由モード
     const commissionName = opts.commission ?? "default";
-    const spinner = ora(`Commission '${commissionName}' でタスクを実行中...`).start();
+    const spinner = createSpinner(`Commission '${commissionName}' でタスクを実行中...`).start();
 
     try {
       const mediumRegistry = await createMediumRegistry(projectPath);
@@ -425,7 +425,7 @@ export async function executeTask(
 
       // --auto-pr: 実行成功時に自動で PR を作成（Commission モード、dry-run時はスキップ）
       if (opts.autoPr && !opts.dryRun && result.status === "completed") {
-        const prSpinner = ora("PR を作成中...").start();
+        const prSpinner = createSpinner("PR を作成中...").start();
         try {
           const prAdapter = await createPRAdapter(projectPath);
           const prUseCase = new CreatePRUseCase(prAdapter, createLoggerPort());

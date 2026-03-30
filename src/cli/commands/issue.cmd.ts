@@ -4,7 +4,6 @@
  */
 
 import { Command } from "commander";
-import ora from "ora";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { RunIssueUseCase } from "../../application/use-cases/run-issue.use-case.js";
@@ -18,6 +17,7 @@ import {
   printSuccess,
   printError,
   printInfo,
+  createSpinner,
 } from "../output.js";
 import type { ConfigPort, VcsPort, LoggerPort } from "../../application/use-cases/run-commission.use-case.js";
 import type { MediumRegistry } from "../../application/services/commission-runner.service.js";
@@ -124,7 +124,7 @@ export function createIssueCommand(): Command {
     .option("--commission <name>", "実行する Commission 名")
     .action(async (issueNumber: string, opts) => {
       const projectPath = process.cwd();
-      const spinner = ora(`Issue #${issueNumber} を処理中...`).start();
+      const spinner = createSpinner(`Issue #${issueNumber} を処理中...`).start();
 
       try {
         const issueAdapter = new GitHubIssueAdapter();
@@ -168,7 +168,7 @@ export function createIssueCommand(): Command {
     .description("Issue をタスクキューに追加する")
     .action(async (issueNumber: string) => {
       const projectPath = process.cwd();
-      const spinner = ora(`Issue #${issueNumber} をキューに追加中...`).start();
+      const spinner = createSpinner(`Issue #${issueNumber} をキューに追加中...`).start();
 
       try {
         const issueAdapter = new GitHubIssueAdapter();

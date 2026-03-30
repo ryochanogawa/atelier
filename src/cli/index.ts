@@ -25,7 +25,7 @@ import { createRunCommand } from "./commands/run.cmd.js";
 import { createCatalogCommand } from "./commands/catalog.cmd.js";
 import { createWatchCommand } from "./commands/watch.cmd.js";
 import { createSpecCommand } from "./commands/spec.cmd.js";
-import { setOutputFormat } from "./output.js";
+import { setOutputFormat, printHeader } from "./output.js";
 
 const program = new Command();
 
@@ -39,6 +39,7 @@ program
     if (opts.json) {
       setOutputFormat("json");
     }
+    printHeader(`${CLI_NAME.toUpperCase()} v${CLI_VERSION}`);
   });
 
 // コマンド登録

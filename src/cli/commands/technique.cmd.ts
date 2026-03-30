@@ -4,7 +4,6 @@
  */
 
 import { Command } from "commander";
-import ora from "ora";
 import { EjectCommissionUseCase } from "../../application/use-cases/eject-commission.use-case.js";
 import {
   listBuiltinCommissions,
@@ -16,6 +15,7 @@ import {
   printError,
   printWarning,
   printInfo,
+  createSpinner,
 } from "../output.js";
 
 export function createTechniqueCommand(): Command {
@@ -59,7 +59,7 @@ export function createTechniqueCommand(): Command {
     .option("--force", "既存ファイルを上書きする", false)
     .action(async (name: string, opts) => {
       const projectPath = process.cwd();
-      const spinner = ora(
+      const spinner = createSpinner(
         `ビルトイン Commission '${name}' を展開中...`,
       ).start();
 

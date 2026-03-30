@@ -4,8 +4,7 @@
  */
 
 import { Command } from "commander";
-import ora from "ora";
-import chalk from "chalk";
+import { COLORS } from "../theme.js";
 import path from "node:path";
 import fs from "node:fs/promises";
 import readline from "node:readline";
@@ -29,6 +28,7 @@ import {
   printError,
   printWarning,
   printInfo,
+  createSpinner,
 } from "../output.js";
 import type { ConfigPort, VcsPort, LoggerPort } from "../../application/use-cases/run-commission.use-case.js";
 import type { MediumRegistry } from "../../application/services/commission-runner.service.js";
@@ -226,7 +226,7 @@ async function promptDescription(): Promise<string> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   const lines: string[] = [];
 
-  console.log(chalk.cyan("説明を入力してください（空行で確定）:"));
+  console.log(COLORS.accent("説明を入力してください（空行で確定）:"));
 
   return new Promise((resolve) => {
     rl.on("line", (line) => {
@@ -301,7 +301,7 @@ export function createSpecCommand(): Command {
         }
       }
       const projectPath = process.cwd();
-      const spinner = ora("仕様書を作成中...").start();
+      const spinner = createSpinner("仕様書を作成中...").start();
 
       try {
         // 1. spec.json を生成
@@ -356,7 +356,7 @@ export function createSpecCommand(): Command {
         return;
       }
 
-      const spinner = ora(`Spec #${id} のデザインを生成中...`).start();
+      const spinner = createSpinner(`Spec #${id} のデザインを生成中...`).start();
 
       try {
         const dir = await resolveSpecDir(projectPath, id);
@@ -407,7 +407,7 @@ export function createSpecCommand(): Command {
         return;
       }
 
-      const spinner = ora(`Spec #${id} のタスクを生成中...`).start();
+      const spinner = createSpinner(`Spec #${id} のタスクを生成中...`).start();
 
       try {
         const dir = await resolveSpecDir(projectPath, id);
@@ -478,7 +478,7 @@ export function createSpecCommand(): Command {
       const label = taskNumber
         ? `Spec #${id} タスク${taskNumber} の実装を開始中...`
         : `Spec #${id} の実装を開始中...`;
-      const spinner = ora(label).start();
+      const spinner = createSpinner(label).start();
 
       try {
         const dir = await resolveSpecDir(projectPath, id);
@@ -575,15 +575,15 @@ export function createSpecCommand(): Command {
         const phaseColor = (phase: SpecPhase): string => {
           switch (phase) {
             case "implemented":
-              return chalk.green(phase);
+              return COLORS.success(phase);
             case "tasks":
-              return chalk.cyan(phase);
+              return COLORS.accent(phase);
             case "design":
-              return chalk.blue(phase);
+              return COLORS.info(phase);
             case "requirements":
-              return chalk.yellow(phase);
+              return COLORS.warning(phase);
             default:
-              return chalk.white(phase);
+              return COLORS.text(phase);
           }
         };
 
@@ -626,8 +626,8 @@ export function createSpecCommand(): Command {
         const dirName = path.basename(dir);
 
         console.log();
-        console.log(chalk.bold(`Spec #${specData.id}: ${specData.name}`));
-        console.log(chalk.dim("─".repeat(50)));
+        console.log(COLORS.accent.bold(`Spec #${specData.id}: ${specData.name}`));
+        console.log(COLORS.muted("─".repeat(50)));
         printInfo(`説明:    ${specData.description}`);
         printInfo(`フェーズ: ${specData.phase}`);
         printInfo(`作成日:  ${new Date(specData.createdAt).toLocaleString("ja-JP")}`);
@@ -645,9 +645,9 @@ export function createSpecCommand(): Command {
         }
 
         if (existing.length > 0) {
-          console.log(chalk.bold("ファイル:"));
+          console.log(COLORS.accent.bold("ファイル:"));
           for (const f of existing) {
-            console.log(`  ${chalk.cyan(f)}`);
+            console.log(`  ${COLORS.accent(f)}`);
           }
           console.log();
         }
@@ -671,7 +671,7 @@ export function createSpecCommand(): Command {
           const trace = extractTraceFromSpecs(reqContent, designContent, tasksContent);
 
           if (trace.requirements.length > 0) {
-            console.log(chalk.bold("=== トレーサビリティ ==="));
+            console.log(COLORS.accent.bold("=== トレーサビリティ ==="));
             console.log();
 
             // 各要件のカバー状況を判定
@@ -683,14 +683,14 @@ export function createSpecCommand(): Command {
               }
             }
 
-            console.log(chalk.bold("要件カバレッジ:"));
+            console.log(COLORS.accent.bold("要件カバレッジ:"));
             const rows = trace.requirements.map((req) => {
               const hasDesign = designContent !== null
-                ? (designCoveredIds.has(req.id) ? chalk.green("✓") : chalk.dim("-"))
-                : chalk.dim("（未生成）");
+                ? (designCoveredIds.has(req.id) ? COLORS.success("✓") : COLORS.muted("-"))
+                : COLORS.muted("（未生成）");
               const hasTask = tasksContent !== null
-                ? (taskCoveredIds.has(req.id) ? chalk.green("✓") : chalk.dim("-"))
-                : chalk.dim("（未生成）");
+                ? (taskCoveredIds.has(req.id) ? COLORS.success("✓") : COLORS.muted("-"))
+                : COLORS.muted("（未生成）");
               return [req.id, req.name, hasDesign, hasTask];
             });
 

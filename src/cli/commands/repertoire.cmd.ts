@@ -4,13 +4,13 @@
  */
 
 import { Command } from "commander";
-import ora from "ora";
 import { ManageRepertoireUseCase } from "../../application/use-cases/manage-repertoire.use-case.js";
 import {
   printTable,
   printSuccess,
   printError,
   printWarning,
+  createSpinner,
 } from "../output.js";
 
 export function createRepertoireCommand(): Command {
@@ -23,7 +23,7 @@ export function createRepertoireCommand(): Command {
     .description("GitHub リポジトリから Repertoire をインストール")
     .action(async (url: string) => {
       const projectPath = process.cwd();
-      const spinner = ora(`Repertoire をインストール中...`).start();
+      const spinner = createSpinner(`Repertoire をインストール中...`).start();
 
       try {
         const useCase = new ManageRepertoireUseCase();
@@ -81,7 +81,7 @@ export function createRepertoireCommand(): Command {
     .description("Repertoire を削除する")
     .action(async (name: string) => {
       const projectPath = process.cwd();
-      const spinner = ora(
+      const spinner = createSpinner(
         `Repertoire '${name}' を削除中...`,
       ).start();
 

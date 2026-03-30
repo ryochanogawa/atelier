@@ -5,8 +5,7 @@
  */
 
 import { Command } from "commander";
-import ora from "ora";
-import chalk from "chalk";
+import { COLORS } from "../theme.js";
 import readline from "node:readline";
 import path from "node:path";
 import { simpleGit } from "simple-git";
@@ -28,6 +27,7 @@ import {
   printError,
   printWarning,
   printInfo,
+  createSpinner,
 } from "../output.js";
 
 /**
@@ -146,12 +146,12 @@ export function createBranchCommand(): Command {
 
         const rows = branches.map((b) => {
           const nameDisplay = b.current
-            ? chalk.green(`* ${b.name}`)
+            ? COLORS.success(`* ${b.name}`)
             : `  ${b.name}`;
           const commitShort = b.commit.slice(0, 8);
           const worktreeDisplay = b.worktreePath
-            ? chalk.cyan(path.relative(projectPath, b.worktreePath) || b.worktreePath)
-            : chalk.gray("-");
+            ? COLORS.accent(path.relative(projectPath, b.worktreePath) || b.worktreePath)
+            : COLORS.muted("-");
           return [nameDisplay, commitShort, b.label, worktreeDisplay];
         });
 
@@ -170,7 +170,7 @@ export function createBranchCommand(): Command {
     .description("指定ブランチをメインブランチにマージし、worktree + ブランチを削除する")
     .action(async (name: string) => {
       const projectPath = process.cwd();
-      const spinner = ora(`ブランチ '${name}' をマージ中...`).start();
+      const spinner = createSpinner(`ブランチ '${name}' をマージ中...`).start();
 
       try {
         const useCase = new ManageBranchesUseCase(projectPath);
@@ -193,7 +193,7 @@ export function createBranchCommand(): Command {
     .description("指定ブランチと worktree を削除する")
     .action(async (name: string) => {
       const projectPath = process.cwd();
-      const spinner = ora(`ブランチ '${name}' を削除中...`).start();
+      const spinner = createSpinner(`ブランチ '${name}' を削除中...`).start();
 
       try {
         const useCase = new ManageBranchesUseCase(projectPath);
@@ -217,7 +217,7 @@ export function createBranchCommand(): Command {
     .option("--direct", "Commission を使わず直接実行", false)
     .action(async (name: string, opts) => {
       const projectPath = process.cwd();
-      const spinner = ora(`ブランチ '${name}' を再実行中...`).start();
+      const spinner = createSpinner(`ブランチ '${name}' を再実行中...`).start();
 
       try {
         const useCase = new ManageBranchesUseCase(projectPath);
@@ -400,13 +400,13 @@ export function createBranchCommand(): Command {
         const { branchName, worktreePath } = await branchUseCase.retryBranch(name);
 
         console.log();
-        console.log(chalk.bold("ATELIER Instruct Mode"));
-        console.log(chalk.dim("─".repeat(50)));
+        console.log(COLORS.accent.bold("ATELIER Instruct Mode"));
+        console.log(COLORS.muted("─".repeat(50)));
         printInfo(`ブランチ: ${branchName}`);
         printInfo(`Worktree: ${path.relative(projectPath, worktreePath) || worktreePath}`);
-        console.log(chalk.dim("追加の指示を入力してください。空行で実行、Ctrl+C でキャンセル。"));
-        console.log(chalk.dim("複数行入力可能です。"));
-        console.log(chalk.dim("─".repeat(50)));
+        console.log(COLORS.muted("追加の指示を入力してください。空行で実行、Ctrl+C でキャンセル。"));
+        console.log(COLORS.muted("複数行入力可能です。"));
+        console.log(COLORS.muted("─".repeat(50)));
         console.log();
 
         // 対話モードで追加指示を入力
@@ -419,7 +419,7 @@ export function createBranchCommand(): Command {
 
         const instruction = await new Promise<string>((resolve, reject) => {
           const promptLine = () => {
-            rl.question(chalk.cyan("instruct > "), (answer) => {
+            rl.question(COLORS.accent("instruct > "), (answer) => {
               const trimmed = answer.trim();
 
               // 空行で確定
@@ -458,7 +458,7 @@ export function createBranchCommand(): Command {
         printInfo(`指示内容: ${instruction.slice(0, 100)}${instruction.length > 100 ? "..." : ""}`);
 
         // --direct 実行（worktree 内で）
-        const spinner = ora("worktree 内で追加指示を実行中...").start();
+        const spinner = createSpinner("worktree 内で追加指示を実行中...").start();
 
         const directUseCase = new DirectRunUseCase();
         const result = await directUseCase.execute(instruction, projectPath, {

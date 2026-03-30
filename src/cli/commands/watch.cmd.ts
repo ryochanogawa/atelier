@@ -5,7 +5,7 @@
  */
 
 import { Command } from "commander";
-import chalk from "chalk";
+import { COLORS } from "../theme.js";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { TaskStoreAdapter } from "../../adapters/config/task-store.adapter.js";
@@ -271,8 +271,8 @@ export function createWatchCommand(): Command {
       let abortController = new AbortController();
 
       console.log();
-      console.log(chalk.bold("ATELIER Watch Mode"));
-      console.log(chalk.dim("─".repeat(50)));
+      console.log(COLORS.accent.bold("ATELIER Watch Mode"));
+      console.log(COLORS.muted("─".repeat(50)));
       printInfo(`監視対象: .atelier/tasks.yaml`);
       printInfo(`ポーリング間隔: ${pollInterval}ms`);
       if (concurrency > 1) {
@@ -370,8 +370,8 @@ export function createWatchCommand(): Command {
       // サマリー表示
       if (taskCount > 0) {
         console.log();
-        console.log(chalk.bold("Watch サマリー"));
-        console.log(chalk.dim("─".repeat(50)));
+        console.log(COLORS.accent.bold("Watch サマリー"));
+        console.log(COLORS.muted("─".repeat(50)));
         printInfo(`合計: ${taskCount}`);
         printSuccess(`成功: ${successCount}`);
         if (failCount > 0) {

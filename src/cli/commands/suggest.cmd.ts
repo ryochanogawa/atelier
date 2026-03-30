@@ -4,7 +4,7 @@
  */
 
 import { Command } from "commander";
-import chalk from "chalk";
+import { COLORS } from "../theme.js";
 import { IntentEnhancerService } from "../../domain/services/intent-enhancer.service.js";
 import { printSuccess, printInfo, printWarning, printTable } from "../output.js";
 
@@ -42,10 +42,10 @@ export function createSuggestCommand(): Command {
 
       const best = suggestions[0];
       printInfo(
-        `推奨: ${chalk.bold(best.name)} (スコア: ${Math.round(best.score * 100)}%)`,
+        `推奨: ${COLORS.accent.bold(best.name)} (スコア: ${Math.round(best.score * 100)}%)`,
       );
       printInfo(
-        `使用例: ${chalk.dim(`atelier commission run --palette ${best.name}`)}`,
+        `使用例: ${COLORS.muted(`atelier commission run --palette ${best.name}`)}`,
       );
     });
 
@@ -79,10 +79,10 @@ export function createSuggestCommand(): Command {
 
       const best = suggestions[0];
       printInfo(
-        `推奨: ${chalk.bold(best.name)} (スコア: ${Math.round(best.score * 100)}%)`,
+        `推奨: ${COLORS.accent.bold(best.name)} (スコア: ${Math.round(best.score * 100)}%)`,
       );
       printInfo(
-        `使用例: ${chalk.dim(`atelier commission run ${best.name}`)}`,
+        `使用例: ${COLORS.muted(`atelier commission run ${best.name}`)}`,
       );
     });
 
@@ -105,7 +105,7 @@ export function createSuggestCommand(): Command {
           "プロンプトは十分に具体的です。追加の補完は不要です。",
         );
         console.log();
-        console.log(chalk.dim("--- 元のプロンプト ---"));
+        console.log(COLORS.muted("--- 元のプロンプト ---"));
         console.log(result.original);
         return;
       }
@@ -117,13 +117,13 @@ export function createSuggestCommand(): Command {
 
       for (const ctx of result.addedContexts) {
         console.log(
-          `  ${chalk.yellow("+")} [${chalk.bold(ctx.category)}] ${ctx.content}`,
+          `  ${COLORS.warning("+")} [${COLORS.accent.bold(ctx.category)}] ${ctx.content}`,
         );
-        console.log(`    ${chalk.dim(ctx.reason)}`);
+        console.log(`    ${COLORS.muted(ctx.reason)}`);
       }
 
       console.log();
-      console.log(chalk.dim("--- 強化済みプロンプト ---"));
+      console.log(COLORS.muted("--- 強化済みプロンプト ---"));
       console.log(result.enhanced);
       console.log();
     });

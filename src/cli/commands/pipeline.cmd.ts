@@ -4,7 +4,6 @@
  */
 
 import { Command } from "commander";
-import ora from "ora";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { PipelineRunUseCase } from "../../application/use-cases/pipeline-run.use-case.js";
@@ -18,6 +17,7 @@ import {
   printSuccess,
   printError,
   printInfo,
+  createSpinner,
 } from "../output.js";
 import type { ConfigPort, VcsPort, LoggerPort } from "../../application/use-cases/run-commission.use-case.js";
 import type { MediumRegistry } from "../../application/services/commission-runner.service.js";
@@ -164,7 +164,7 @@ export function createPipelineCommand(): Command {
       const ciMode = isCI();
 
       // CI モードではスピナーを使わない
-      const spinner = ciMode ? null : ora(`Pipeline '${name}' を実行中...`).start();
+      const spinner = ciMode ? null : createSpinner(`Pipeline '${name}' を実行中...`).start();
 
       try {
         const mediumRegistry = await createMediumRegistry(projectPath);

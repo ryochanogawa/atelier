@@ -11,7 +11,18 @@ import { parse as parseYaml } from "yaml";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const BUILTIN_COMMISSIONS = ["default", "frontend", "backend", "fullstack"] as const;
+const BUILTIN_COMMISSIONS = [
+  "default",
+  "frontend",
+  "backend",
+  "fullstack",
+  "doc-refresh",
+  "legacy-analysis",
+  "requirements-analysis",
+  "review-gate",
+  "spec-driven",
+  "test-enhancement",
+] as const;
 const BUILTIN_PALETTES = [
   "planner",
   "coder",

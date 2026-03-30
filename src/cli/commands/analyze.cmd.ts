@@ -4,7 +4,6 @@
  */
 
 import { Command } from "commander";
-import ora from "ora";
 import path from "node:path";
 import { readTextFile } from "../../infrastructure/fs/file-system.js";
 import { CodebaseAnalyzerService } from "../../domain/services/codebase-analyzer.service.js";
@@ -14,6 +13,7 @@ import {
   printError,
   printInfo,
   printWarning,
+  createSpinner,
 } from "../output.js";
 
 export function createAnalyzeCommand(): Command {
@@ -29,7 +29,7 @@ export function createAnalyzeCommand(): Command {
       const workingDir = targetPath
         ? path.resolve(targetPath)
         : process.cwd();
-      const spinner = ora("コードベース構造を分析中...").start();
+      const spinner = createSpinner("コードベース構造を分析中...").start();
 
       try {
         const service = new CodebaseAnalyzerService();
@@ -93,7 +93,7 @@ export function createAnalyzeCommand(): Command {
       const workingDir = targetPath
         ? path.resolve(targetPath)
         : process.cwd();
-      const spinner = ora("依存関係を分析中...").start();
+      const spinner = createSpinner("依存関係を分析中...").start();
 
       try {
         const service = new CodebaseAnalyzerService();
@@ -151,7 +151,7 @@ export function createAnalyzeCommand(): Command {
     .description("ファイルの複雑度を分析する")
     .action(async (file: string) => {
       const filePath = path.resolve(file);
-      const spinner = ora(`${path.basename(file)} の複雑度を分析中...`).start();
+      const spinner = createSpinner(`${path.basename(file)} の複雑度を分析中...`).start();
 
       try {
         const content = await readTextFile(filePath);
@@ -204,7 +204,7 @@ export function createAnalyzeCommand(): Command {
       const workingDir = opts.path
         ? path.resolve(opts.path)
         : process.cwd();
-      const spinner = ora("マイグレーション計画を生成中...").start();
+      const spinner = createSpinner("マイグレーション計画を生成中...").start();
 
       try {
         const service = new CodebaseAnalyzerService();

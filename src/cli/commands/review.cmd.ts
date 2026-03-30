@@ -4,8 +4,6 @@
  */
 
 import { Command } from "commander";
-import ora from "ora";
-import chalk from "chalk";
 import Table from "cli-table3";
 import { DiffAnalyzerService } from "../../domain/services/diff-analyzer.service.js";
 import { SecurityScannerService } from "../../domain/services/security-scanner.service.js";
@@ -20,7 +18,9 @@ import {
   printWarning,
   printInfo,
   getOutputFormat,
+  createSpinner,
 } from "../output.js";
+import { COLORS } from "../theme.js";
 
 /**
  * git diff を取得する。
@@ -38,13 +38,13 @@ async function getGitDiff(cwd: string, target?: string): Promise<string> {
 function riskColor(level: RiskAssessment["level"]): (text: string) => string {
   switch (level) {
     case "low":
-      return chalk.green;
+      return COLORS.success;
     case "medium":
-      return chalk.yellow;
+      return COLORS.warning;
     case "high":
-      return chalk.red;
+      return COLORS.error;
     case "critical":
-      return chalk.bgRed.white;
+      return COLORS.error.bold;
   }
 }
 
@@ -53,8 +53,8 @@ function riskColor(level: RiskAssessment["level"]): (text: string) => string {
  */
 function printDiffAnalysis(analysis: DiffAnalysis): void {
   console.log();
-  console.log(chalk.bold("差分解析結果"));
-  console.log(chalk.dim("─".repeat(50)));
+  console.log(COLORS.accent.bold("差分解析結果"));
+  console.log(COLORS.muted("─".repeat(50)));
 
   const summaryTable = new Table({
     colWidths: [20, 40],
@@ -63,8 +63,8 @@ function printDiffAnalysis(analysis: DiffAnalysis): void {
 
   summaryTable.push(
     ["変更ファイル数", String(analysis.totalFiles)],
-    ["追加行数", chalk.green(`+${analysis.additions}`)],
-    ["削除行数", chalk.red(`-${analysis.deletions}`)],
+    ["追加行数", COLORS.success(`+${analysis.additions}`)],
+    ["削除行数", COLORS.error(`-${analysis.deletions}`)],
     ["複雑度スコア", String(analysis.complexityScore)],
   );
 
@@ -73,10 +73,10 @@ function printDiffAnalysis(analysis: DiffAnalysis): void {
   // カテゴリ別ファイル
   if (Object.keys(analysis.filesByCategory).length > 0) {
     console.log();
-    console.log(chalk.bold("カテゴリ別ファイル"));
+    console.log(COLORS.accent.bold("カテゴリ別ファイル"));
 
     const catTable = new Table({
-      head: [chalk.cyan("カテゴリ"), chalk.cyan("ファイル数"), chalk.cyan("ファイル")],
+      head: [COLORS.accent("カテゴリ"), COLORS.accent("ファイル数"), COLORS.accent("ファイル")],
       style: { head: [], border: [] },
       colWidths: [12, 12, 50],
       wordWrap: true,
@@ -95,16 +95,16 @@ function printDiffAnalysis(analysis: DiffAnalysis): void {
  */
 function printRiskAssessment(risk: RiskAssessment): void {
   console.log();
-  console.log(chalk.bold("リスク評価"));
-  console.log(chalk.dim("─".repeat(50)));
+  console.log(COLORS.accent.bold("リスク評価"));
+  console.log(COLORS.muted("─".repeat(50)));
 
   const colorFn = riskColor(risk.level);
   console.log(`  スコア: ${colorFn(`${risk.score}/100`)} (${colorFn(risk.level.toUpperCase())})`);
-  console.log(`  自動承認: ${risk.autoApprovable ? chalk.green("可能") : chalk.yellow("不可")}`);
+  console.log(`  自動承認: ${risk.autoApprovable ? COLORS.success("可能") : COLORS.warning("不可")}`);
 
   if (risk.factors.length > 0) {
     console.log();
-    console.log(chalk.bold("  リスクファクター:"));
+    console.log(COLORS.accent.bold("  リスクファクター:"));
     for (const factor of risk.factors) {
       console.log(`    - [${factor.category}] ${factor.description} (weight: ${factor.weight.toFixed(1)})`);
     }
@@ -116,8 +116,8 @@ function printRiskAssessment(risk: RiskAssessment): void {
  */
 function printSecurityScan(scan: SecurityScanResult): void {
   console.log();
-  console.log(chalk.bold("セキュリティスキャン結果"));
-  console.log(chalk.dim("─".repeat(50)));
+  console.log(COLORS.accent.bold("セキュリティスキャン結果"));
+  console.log(COLORS.muted("─".repeat(50)));
 
   const summaryTable = new Table({
     colWidths: [20, 15],
@@ -125,9 +125,9 @@ function printSecurityScan(scan: SecurityScanResult): void {
   });
 
   summaryTable.push(
-    ["Critical", scan.summary.critical > 0 ? chalk.bgRed.white(` ${scan.summary.critical} `) : chalk.green("0")],
-    ["High", scan.summary.high > 0 ? chalk.red(String(scan.summary.high)) : chalk.green("0")],
-    ["Moderate", scan.summary.moderate > 0 ? chalk.yellow(String(scan.summary.moderate)) : chalk.green("0")],
+    ["Critical", scan.summary.critical > 0 ? COLORS.error.bold(` ${scan.summary.critical} `) : COLORS.success("0")],
+    ["High", scan.summary.high > 0 ? COLORS.error(String(scan.summary.high)) : COLORS.success("0")],
+    ["Moderate", scan.summary.moderate > 0 ? COLORS.warning(String(scan.summary.moderate)) : COLORS.success("0")],
     ["Low", String(scan.summary.low)],
     ["Info", String(scan.summary.info)],
     ["合計", String(scan.summary.total)],
@@ -141,11 +141,11 @@ function printSecurityScan(scan: SecurityScanResult): void {
       (v) => v.severity === "critical" || v.severity === "high",
     );
     if (criticalAndHigh.length > 0) {
-      console.log(chalk.red.bold("  重要な脆弱性:"));
+      console.log(COLORS.error.bold("  重要な脆弱性:"));
       for (const vuln of criticalAndHigh) {
-        console.log(`    - ${chalk.red(`[${vuln.severity.toUpperCase()}]`)} ${vuln.package}: ${vuln.name}`);
+        console.log(`    - ${COLORS.error(`[${vuln.severity.toUpperCase()}]`)} ${vuln.package}: ${vuln.name}`);
         if (vuln.fixAvailable) {
-          console.log(chalk.green(`      修正可能`));
+          console.log(COLORS.success(`      修正可能`));
         }
       }
     }
@@ -157,15 +157,15 @@ function printSecurityScan(scan: SecurityScanResult): void {
  */
 function printLicenseScan(scan: LicenseScanResult): void {
   console.log();
-  console.log(chalk.bold("ライセンスチェック結果"));
-  console.log(chalk.dim("─".repeat(50)));
+  console.log(COLORS.accent.bold("ライセンスチェック結果"));
+  console.log(COLORS.muted("─".repeat(50)));
 
   console.log(`  チェック済みパッケージ: ${scan.licenses.length}`);
 
   if (scan.violations.length > 0) {
     printWarning(`${scan.violations.length} 件のライセンス違反を検出`);
     for (const v of scan.violations) {
-      console.log(`    - ${chalk.red(v.package)}@${v.version}: ${v.license}`);
+      console.log(`    - ${COLORS.error(v.package)}@${v.version}: ${v.license}`);
     }
   } else {
     printSuccess("ライセンス違反なし");
@@ -177,8 +177,8 @@ function printLicenseScan(scan: LicenseScanResult): void {
  */
 function printPolicyEvaluation(evaluation: PolicyEvaluation): void {
   console.log();
-  console.log(chalk.bold("ポリシー評価結果"));
-  console.log(chalk.dim("─".repeat(50)));
+  console.log(COLORS.accent.bold("ポリシー評価結果"));
+  console.log(COLORS.muted("─".repeat(50)));
 
   if (evaluation.approved) {
     if (evaluation.autoApproved) {
@@ -192,16 +192,16 @@ function printPolicyEvaluation(evaluation: PolicyEvaluation): void {
 
   if (evaluation.violations.length > 0) {
     console.log();
-    console.log(chalk.bold("  違反事項:"));
+    console.log(COLORS.accent.bold("  違反事項:"));
     for (const v of evaluation.violations) {
-      const icon = v.severity === "error" ? chalk.red("ERROR") : chalk.yellow("WARN");
+      const icon = v.severity === "error" ? COLORS.error("ERROR") : COLORS.warning("WARN");
       console.log(`    [${icon}] ${v.ruleName}: ${v.description}`);
     }
   }
 
   if (evaluation.requiredApprovers.length > 0) {
     console.log();
-    console.log(chalk.bold("  必要な承認者:"));
+    console.log(COLORS.accent.bold("  必要な承認者:"));
     for (const approver of evaluation.requiredApprovers) {
       console.log(`    - ${approver}`);
     }
@@ -221,7 +221,7 @@ export function createReviewCommand(): Command {
     .option("--json", "JSON 形式で出力", false)
     .action(async (opts) => {
       const projectPath = process.cwd();
-      const spinner = ora("差分を解析中...").start();
+      const spinner = createSpinner("差分を解析中...").start();
 
       try {
         const diffText = await getGitDiff(projectPath, opts.target);
@@ -250,13 +250,13 @@ export function createReviewCommand(): Command {
 
         // 影響サマリー
         console.log();
-        console.log(chalk.bold("影響サマリー"));
-        console.log(chalk.dim("─".repeat(50)));
+        console.log(COLORS.accent.bold("影響サマリー"));
+        console.log(COLORS.muted("─".repeat(50)));
         console.log(`  ${impact.summary}`);
 
         if (impact.affectedComponents.length > 0) {
           console.log();
-          console.log(chalk.bold("  影響コンポーネント:"));
+          console.log(COLORS.accent.bold("  影響コンポーネント:"));
           for (const comp of impact.affectedComponents) {
             console.log(`    - ${comp}`);
           }
@@ -264,7 +264,7 @@ export function createReviewCommand(): Command {
 
         if (impact.suggestedReviewScope.length > 0) {
           console.log();
-          console.log(chalk.bold("  推奨レビュー範囲:"));
+          console.log(COLORS.accent.bold("  推奨レビュー範囲:"));
           for (const scope of impact.suggestedReviewScope) {
             console.log(`    - ${scope}`);
           }
@@ -288,7 +288,7 @@ export function createReviewCommand(): Command {
     .option("--json", "JSON 形式で出力", false)
     .action(async (opts) => {
       const projectPath = process.cwd();
-      const spinner = ora("セキュリティスキャン中...").start();
+      const spinner = createSpinner("セキュリティスキャン中...").start();
 
       try {
         const scanner = new SecurityScannerService();
@@ -325,8 +325,8 @@ export function createReviewCommand(): Command {
 
         if (sbom) {
           console.log();
-          console.log(chalk.bold("SBOM (CycloneDX)"));
-          console.log(chalk.dim("─".repeat(50)));
+          console.log(COLORS.accent.bold("SBOM (CycloneDX)"));
+          console.log(COLORS.muted("─".repeat(50)));
           printInfo(`${sbom.components.length} コンポーネント`);
           printInfo(`生成日時: ${sbom.metadata.timestamp}`);
         }
@@ -365,7 +365,7 @@ export function createReviewCommand(): Command {
     .option("--json", "JSON 形式で出力", false)
     .action(async (opts) => {
       const projectPath = process.cwd();
-      const spinner = ora("レビューゲートを実行中...").start();
+      const spinner = createSpinner("レビューゲートを実行中...").start();
 
       try {
         // Step 1: セキュリティスキャン
@@ -440,13 +440,13 @@ export function createReviewCommand(): Command {
 
           if (linterResults.length > 0) {
             console.log();
-            console.log(chalk.bold("Linter結果"));
-            console.log(chalk.dim("─".repeat(50)));
+            console.log(COLORS.accent.bold("Linter結果"));
+            console.log(COLORS.muted("─".repeat(50)));
             const errors = linterResults.filter((r) => r.severity === "error");
             const warnings = linterResults.filter((r) => r.severity === "warning");
             console.log(`  エラー: ${errors.length}, 警告: ${warnings.length}`);
             for (const err of errors.slice(0, 10)) {
-              console.log(`    ${chalk.red("ERROR")} ${err.file}:${err.line} - ${err.message}`);
+              console.log(`    ${COLORS.error("ERROR")} ${err.file}:${err.line} - ${err.message}`);
             }
             if (errors.length > 10) {
               console.log(`    ... 他 ${errors.length - 10} 件`);
@@ -457,8 +457,8 @@ export function createReviewCommand(): Command {
 
           // 最終判定
           console.log();
-          console.log(chalk.bold("最終判定"));
-          console.log(chalk.dim("═".repeat(50)));
+          console.log(COLORS.accent.bold("最終判定"));
+          console.log(COLORS.muted("═".repeat(50)));
           if (policyResult.autoApproved) {
             printSuccess("自動承認: このPRは自動的に承認されました");
           } else if (policyResult.approved) {

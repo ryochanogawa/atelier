@@ -4,8 +4,6 @@
  */
 
 import { Command } from "commander";
-import ora from "ora";
-import chalk from "chalk";
 import { QueueTaskUseCase, RunQueueUseCase, type TaskRunDetail } from "../../application/use-cases/queue-task.use-case.js";
 import { createEventBus } from "../../infrastructure/event-bus/event-emitter.js";
 import {
@@ -14,7 +12,9 @@ import {
   printError,
   printWarning,
   printInfo,
+  createSpinner,
 } from "../output.js";
+import { COLORS } from "../theme.js";
 import type { ConfigPort, VcsPort, LoggerPort } from "../../application/use-cases/run-commission.use-case.js";
 import type { MediumRegistry } from "../../application/services/commission-runner.service.js";
 import type { StudioConfig, MediumConfig } from "../../shared/types.js";
@@ -209,12 +209,12 @@ export function createTaskCommand(): Command {
         const rows = tasks.map((t) => {
           const statusColor =
             t.status === "completed"
-              ? chalk.green(t.status)
+              ? COLORS.success(t.status)
               : t.status === "failed"
-                ? chalk.red(t.status)
+                ? COLORS.error(t.status)
                 : t.status === "running"
-                  ? chalk.yellow(t.status)
-                  : chalk.white(t.status);
+                  ? COLORS.warning(t.status)
+                  : COLORS.text(t.status);
 
           return [t.id, t.description, statusColor, t.commission ?? "-", t.requirementsId != null ? `#${t.requirementsId}` : "-", t.source];
         });
@@ -253,7 +253,7 @@ export function createTaskCommand(): Command {
       const concurrency = opts.concurrency
         ? Math.max(1, parseInt(opts.concurrency, 10) || 1)
         : configConcurrency;
-      const spinner = ora(
+      const spinner = createSpinner(
         concurrency > 1
           ? `キュー内のタスクを並列実行中 (concurrency=${concurrency})...`
           : "キュー内のタスクを実行中...",
@@ -291,7 +291,7 @@ export function createTaskCommand(): Command {
         if (result.details.length > 0) {
           const rows = result.details.map((d: TaskRunDetail) => [
             d.task.description,
-            d.success ? chalk.green("成功") : chalk.red("失敗"),
+            d.success ? COLORS.success("成功") : COLORS.error("失敗"),
             d.branch ?? "-",
             d.error ? d.error.substring(0, 60) : "",
           ]);
@@ -316,7 +316,7 @@ export function createTaskCommand(): Command {
           }
 
           for (const detail of successDetails) {
-            const prSpinner = ora(`PR 作成: ${detail.task.description.substring(0, 40)}...`).start();
+            const prSpinner = createSpinner(`PR 作成: ${detail.task.description.substring(0, 40)}...`).start();
             try {
               const pr = await prUseCase.execute(
                 {

@@ -5,7 +5,7 @@
 
 import { Command } from "commander";
 import path from "node:path";
-import chalk from "chalk";
+import { COLORS } from "../theme.js";
 import {
   listBuiltinPalettes,
   listBuiltinPolicies,
@@ -133,20 +133,20 @@ async function showCategory(category: CategoryDef): Promise<void> {
   for (const name of builtinNames) {
     const overridden = projectNames.includes(name);
     const source = overridden
-      ? chalk.yellow("project (override)")
-      : chalk.dim("builtin");
+      ? COLORS.warning("project (override)")
+      : COLORS.muted("builtin");
     rows.push([name, source]);
   }
 
   // プロジェクト固有のみのリソース
   for (const name of projectNames) {
     if (!builtinSet.has(name)) {
-      rows.push([name, chalk.green("project")]);
+      rows.push([name, COLORS.success("project")]);
     }
   }
 
   if (rows.length === 0) {
-    console.log(chalk.dim("  (none)"));
+    console.log(COLORS.muted("  (none)"));
     return;
   }
 
@@ -162,7 +162,7 @@ export function createCatalogCommand(): Command {
         const category = CATEGORIES.find((c) => c.name === categoryName);
         if (!category) {
           console.error(
-            chalk.red(
+            COLORS.error(
               `不明なカテゴリ: ${categoryName}\n利用可能: ${CATEGORIES.map((c) => c.name).join(", ")}`,
             ),
           );

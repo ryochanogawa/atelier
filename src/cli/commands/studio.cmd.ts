@@ -4,7 +4,6 @@
  */
 
 import { Command } from "commander";
-import ora from "ora";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { StudioInitUseCase } from "../../application/use-cases/init-studio.use-case.js";
@@ -18,6 +17,7 @@ import {
   printWarning,
   printInfo,
   printTable,
+  createSpinner,
 } from "../output.js";
 import type { MediumConfig } from "../../shared/types.js";
 
@@ -31,7 +31,7 @@ export function createStudioCommand(): Command {
     .description(".atelier/ ディレクトリとテンプレートを生成")
     .action(async () => {
       const projectPath = process.cwd();
-      const spinner = ora("Studio を初期化中...").start();
+      const spinner = createSpinner("Studio を初期化中...").start();
 
       try {
         const useCase = new StudioInitUseCase();

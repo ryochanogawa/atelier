@@ -1,0 +1,17 @@
+studio:
+  default_medium: claude-code
+  language: ja
+  log_level: info
+  base_branch: master
+  description: "ATELIER CLI — AI Agent Orchestration CLI (TypeScript / Node.js / DDD + Hexagonal Architecture)"
+
+media:
+  claude-code:
+    command: claude
+    args: ["--print", "--model", "claude-opus-4-6", "--dangerously-skip-permissions"]
+  codex:
+    command: codex
+    args: ["--quiet"]
+  gemini:
+    command: gemini
+    args: ["--prompt"]

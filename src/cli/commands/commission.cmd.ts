@@ -4,7 +4,6 @@
  */
 
 import { Command } from "commander";
-import ora from "ora";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { simpleGit } from "simple-git";
@@ -23,6 +22,8 @@ import {
   printError,
   printWarning,
   printInfo,
+  printSectionDivider,
+  createSpinner,
 } from "../output.js";
 import type { ConfigPort, VcsPort, LoggerPort } from "../../application/use-cases/run-commission.use-case.js";
 import type { MediumRegistry } from "../../application/services/commission-runner.service.js";
@@ -208,7 +209,7 @@ export function createCommissionCommand(): Command {
     .option("--skip-git", "ブランチ作成・コミット・プッシュをスキップし、プロジェクト直下で直接実行する", false)
     .action(async (name: string, opts) => {
       const projectPath = process.cwd();
-      const spinner = ora(`Commission '${name}' を実行中...`).start();
+      const spinner = createSpinner(`Commission '${name}' を実行中...`).start();
 
       try {
         const mediumRegistry = await createMediumRegistry(projectPath);
@@ -285,7 +286,7 @@ export function createCommissionCommand(): Command {
 
         // --auto-pr: 実行成功時に自動で PR を作成
         if (opts.autoPr && result.status === "completed") {
-          const prSpinner = ora("PR を作成中...").start();
+          const prSpinner = createSpinner("PR を作成中...").start();
           try {
             const prAdapter = await createPRAdapter(projectPath);
             const prUseCase = new CreatePRUseCase(prAdapter, createLoggerPort());
@@ -363,7 +364,7 @@ export function createCommissionCommand(): Command {
     .description("Commission YAML の構文・スキーマを検証")
     .action(async (name: string) => {
       const projectPath = process.cwd();
-      const spinner = ora(`Commission '${name}' を検証中...`).start();
+      const spinner = createSpinner(`Commission '${name}' を検証中...`).start();
 
       try {
         const useCase = new CommissionValidateUseCase();

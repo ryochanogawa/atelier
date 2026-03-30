@@ -4,7 +4,6 @@
  */
 
 import { Command } from "commander";
-import ora from "ora";
 import path from "node:path";
 import { readTextFile } from "../../infrastructure/fs/file-system.js";
 import { DocManagerService } from "../../domain/services/doc-manager.service.js";
@@ -14,6 +13,7 @@ import {
   printError,
   printInfo,
   printWarning,
+  createSpinner,
 } from "../output.js";
 
 export function createDocsCommand(): Command {
@@ -29,7 +29,7 @@ export function createDocsCommand(): Command {
       const workingDir = targetPath
         ? path.resolve(targetPath)
         : process.cwd();
-      const spinner = ora("ドキュメントの鮮度をチェック中...").start();
+      const spinner = createSpinner("ドキュメントの鮮度をチェック中...").start();
 
       try {
         const service = new DocManagerService();
@@ -98,7 +98,7 @@ export function createDocsCommand(): Command {
     .description("ソースコードからドキュメントを生成する")
     .action(async (file: string) => {
       const filePath = path.resolve(file);
-      const spinner = ora(
+      const spinner = createSpinner(
         `${path.basename(file)} からドキュメントを生成中...`,
       ).start();
 
@@ -138,7 +138,7 @@ export function createDocsCommand(): Command {
         ? path.resolve(targetPath)
         : process.cwd();
       const limit = parseInt(opts.limit, 10) || 30;
-      const spinner = ora("ナレッジを収集中...").start();
+      const spinner = createSpinner("ナレッジを収集中...").start();
 
       try {
         const service = new DocManagerService();

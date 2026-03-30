@@ -17,8 +17,7 @@
 import { Command } from "commander";
 import readline from "node:readline";
 import path from "node:path";
-import chalk from "chalk";
-import ora from "ora";
+import { COLORS } from "../theme.js";
 import { parse as parseYaml } from "yaml";
 import { InteractiveSessionUseCase } from "../../application/use-cases/interactive-session.use-case.js";
 import { ClaudeCodeAdapter } from "../../adapters/medium/claude-code.adapter.js";
@@ -31,7 +30,7 @@ import { writeTextFile, readTextFile, listFiles, listDirs, ensureDir } from "../
 import { CommissionRunUseCase } from "../../application/use-cases/run-commission.use-case.js";
 import { listBuiltinCommissions } from "../../builtin/index.js";
 import { createEventBus } from "../../infrastructure/event-bus/event-emitter.js";
-import { printSuccess, printError, printWarning, printInfo, printTable, printRunResult } from "../output.js";
+import { printSuccess, printError, printWarning, printInfo, printTable, printRunResult, createSpinner } from "../output.js";
 
 // ── helpers ──────────────────────────────────────────────
 
@@ -109,17 +108,17 @@ async function selectCommission(projectPath: string): Promise<string | null> {
   const commissions = await listAvailableCommissions(projectPath);
 
   console.log();
-  console.log(chalk.bold("Commission を選択してください:"));
+  console.log(COLORS.accent.bold("Commission を選択してください:"));
   console.log();
   commissions.forEach((c, i) => {
-    const tag = c.source === "builtin" ? chalk.dim(" (builtin)") : "";
-    console.log(`  ${chalk.cyan(String(i + 1))}. ${chalk.bold(c.name)}${tag} ${chalk.dim("—")} ${c.description}`);
+    const tag = c.source === "builtin" ? COLORS.muted(" (builtin)") : "";
+    console.log(`  ${COLORS.accent(String(i + 1))}. ${COLORS.accent.bold(c.name)}${tag} ${COLORS.muted("—")} ${c.description}`);
   });
-  console.log(`  ${chalk.cyan(String(commissions.length + 1))}. ${chalk.dim("(直接実行)")} ${chalk.dim("—")} Commission なしで直接AIに渡す`);
-  console.log(`  ${chalk.cyan("0")}. ${chalk.dim("キャンセル")}`);
+  console.log(`  ${COLORS.accent(String(commissions.length + 1))}. ${COLORS.muted("(直接実行)")} ${COLORS.muted("—")} Commission なしで直接AIに渡す`);
+  console.log(`  ${COLORS.accent("0")}. ${COLORS.muted("キャンセル")}`);
   console.log();
 
-  const answer = await promptLine(chalk.cyan("> "));
+  const answer = await promptLine(COLORS.accent("> "));
   const num = parseInt(answer.trim(), 10);
 
   if (num === 0 || isNaN(num)) {
@@ -141,15 +140,15 @@ async function selectCommission(projectPath: string): Promise<string | null> {
 /** 対話終了時のアクション選択 */
 async function selectExitAction(): Promise<"go" | "save_task" | "save_requirements" | "exit"> {
   console.log();
-  console.log(chalk.bold("次のアクションを選択してください:"));
+  console.log(COLORS.accent.bold("次のアクションを選択してください:"));
   console.log();
-  console.log(`  ${chalk.cyan("1")}. ${chalk.bold("実行する")} ${chalk.dim("—")} 会話を要約して Commission を実行`);
-  console.log(`  ${chalk.cyan("2")}. ${chalk.bold("タスクとして保存")} ${chalk.dim("—")} タスクキューに追加`);
-  console.log(`  ${chalk.cyan("3")}. ${chalk.bold("要件定義書として保存")} ${chalk.dim("—")} Markdown ファイルに保存`);
-  console.log(`  ${chalk.cyan("4")}. ${chalk.bold("終了")} ${chalk.dim("—")} 何もせず終了`);
+  console.log(`  ${COLORS.accent("1")}. ${COLORS.accent.bold("実行する")} ${COLORS.muted("—")} 会話を要約して Commission を実行`);
+  console.log(`  ${COLORS.accent("2")}. ${COLORS.accent.bold("タスクとして保存")} ${COLORS.muted("—")} タスクキューに追加`);
+  console.log(`  ${COLORS.accent("3")}. ${COLORS.accent.bold("要件定義書として保存")} ${COLORS.muted("—")} Markdown ファイルに保存`);
+  console.log(`  ${COLORS.accent("4")}. ${COLORS.accent.bold("終了")} ${COLORS.muted("—")} 何もせず終了`);
   console.log();
 
-  const answer = await promptLine(chalk.cyan("> "));
+  const answer = await promptLine(COLORS.accent("> "));
   const num = parseInt(answer.trim(), 10);
 
   switch (num) {
@@ -257,7 +256,7 @@ async function executeCommission(
   const eventBus = createEventBus();
   const useCase = new CommissionRunUseCase(configPort, vcsPort, loggerPort, mediumRegistry, eventBus);
 
-  const execSpinner = ora({ text: `Commission '${commissionName}' を実行中...`, color: "cyan" }).start();
+  const execSpinner = createSpinner(`Commission '${commissionName}' を実行中...`).start();
 
   try {
     const result = await useCase.execute(commissionName, projectPath, {
@@ -330,7 +329,7 @@ async function handleGoCommand(
   }
 
   // Step 1: AIに会話を要約させてタスク文字列を生成
-  const spinner = ora({ text: "タスク指示書を生成中...", color: "cyan" }).start();
+  const spinner = createSpinner("タスク指示書を生成中...").start();
 
   let taskText: string;
   try {
@@ -338,9 +337,9 @@ async function handleGoCommand(
     spinner.stop();
 
     console.log();
-    console.log(chalk.bold.blue("--- 生成されたタスク指示書 ---"));
+    console.log(COLORS.accent.bold("--- 生成されたタスク指示書 ---"));
     console.log();
-    console.log(chalk.green("ai > ") + taskText);
+    console.log(COLORS.success("ai > ") + taskText);
     console.log();
   } catch (error) {
     spinner.fail("タスク指示書の生成に失敗しました");
@@ -371,14 +370,14 @@ async function handleGoCommand(
   // Step 4: 直接実行の場合はAIに直接渡す（Commission なし）
   if (selectedCommission === "__direct__") {
     printInfo("AIに直接タスクを渡して実行します...");
-    const directSpinner = ora({ text: "実行中...", color: "cyan" }).start();
+    const directSpinner = createSpinner("実行中...").start();
     try {
       const response = await session.sendMessage(
         `以下のタスクを実行してください:\n\n${taskText}`,
       );
       directSpinner.stop();
       console.log();
-      console.log(chalk.green("ai > ") + response);
+      console.log(COLORS.success("ai > ") + response);
       console.log();
     } catch (error) {
       directSpinner.fail("実行に失敗しました");
@@ -426,7 +425,7 @@ async function handleResumeCommand(
   }
 
   console.log();
-  console.log(chalk.bold("セッションを選択してください:"));
+  console.log(COLORS.accent.bold("セッションを選択してください:"));
   console.log();
 
   const maxDisplay = Math.min(sessions.length, 10);
@@ -435,12 +434,12 @@ async function handleResumeCommand(
     const messageCount = s.messages.length;
     const firstMsg = s.messages[0]?.content.slice(0, 60) ?? "(空)";
     const date = s.updatedAt.slice(0, 19).replace("T", " ");
-    console.log(`  ${chalk.cyan(String(i + 1))}. ${chalk.dim(date)} ${chalk.dim(`(${messageCount}件)`)} ${firstMsg}...`);
+    console.log(`  ${COLORS.accent(String(i + 1))}. ${COLORS.muted(date)} ${COLORS.muted(`(${messageCount}件)`)} ${firstMsg}...`);
   }
-  console.log(`  ${chalk.cyan("0")}. キャンセル`);
+  console.log(`  ${COLORS.accent("0")}. キャンセル`);
   console.log();
 
-  const answer = await promptLine(chalk.cyan("> "));
+  const answer = await promptLine(COLORS.accent("> "));
   const num = parseInt(answer.trim(), 10);
 
   if (num === 0 || isNaN(num) || num > maxDisplay) {
@@ -457,7 +456,7 @@ async function handleResumeCommand(
   // 直近の会話を表示
   const recentMessages = selected.messages.slice(-4);
   for (const msg of recentMessages) {
-    const prefix = msg.role === "user" ? chalk.cyan("you > ") : chalk.green("ai > ");
+    const prefix = msg.role === "user" ? COLORS.accent("you > ") : COLORS.success("ai > ");
     const content = msg.content.length > 200 ? msg.content.slice(0, 200) + "..." : msg.content;
     console.log(prefix + content);
     console.log();
@@ -470,9 +469,9 @@ async function handleRequirementsMode(
   session: InteractiveSessionUseCase,
 ): Promise<void> {
   console.log();
-  console.log(chalk.bold.blue("--- 構造化要件定義モード ---"));
-  console.log(chalk.dim("AIが質問形式で要件をヒアリングします。"));
-  console.log(chalk.dim("回答を入力してください。「/done」で要件を確定します。"));
+  console.log(COLORS.accent.bold("--- 構造化要件定義モード ---"));
+  console.log(COLORS.muted("AIが質問形式で要件をヒアリングします。"));
+  console.log(COLORS.muted("回答を入力してください。「/done」で要件を確定します。"));
   console.log();
 
   const interviewPrompt = [
@@ -482,11 +481,11 @@ async function handleRequirementsMode(
     "質問は日本語で、分かりやすく簡潔に行ってください。",
   ].join("\n");
 
-  const spinner = ora({ text: "質問を準備中...", color: "cyan" }).start();
+  const spinner = createSpinner("質問を準備中...").start();
   try {
     const response = await session.sendMessage(interviewPrompt);
     spinner.stop();
-    console.log(chalk.green("ai > ") + response);
+    console.log(COLORS.success("ai > ") + response);
     console.log();
     printInfo("回答を入力してください。要件定義が完了したら /done と入力してください。");
     console.log();
@@ -517,7 +516,7 @@ async function handleAnalyzeConversation(
   const doc = analyzer.analyzeRequirements(allMessages);
 
   console.log();
-  console.log(chalk.bold.blue(`--- 要件分析結果: ${doc.title} ---`));
+  console.log(COLORS.accent.bold(`--- 要件分析結果: ${doc.title} ---`));
   console.log();
 
   if (doc.functional.length > 0) {
@@ -549,7 +548,7 @@ async function handleAnalyzeConversation(
   if (contradictions.length > 0) {
     printWarning(`矛盾検出 (${contradictions.length}件):`);
     for (const c of contradictions) {
-      const icon = c.severity === "error" ? chalk.red("[ERROR]") : chalk.yellow("[WARN]");
+      const icon = c.severity === "error" ? COLORS.error("[ERROR]") : COLORS.warning("[WARN]");
       console.log(`  ${icon} ${c.requirementIds.join(" <-> ")}: ${c.reason}`);
     }
     console.log();
@@ -559,8 +558,8 @@ async function handleAnalyzeConversation(
   if (gaps.length > 0) {
     printWarning(`抜け漏れ検出 (${gaps.length}件):`);
     for (const g of gaps) {
-      console.log(`  ${chalk.yellow("-")} [${g.category}] ${g.description}`);
-      console.log(`    ${chalk.dim("提案: " + g.suggestion)}`);
+      console.log(`  ${COLORS.warning("-")} [${g.category}] ${g.description}`);
+      console.log(`    ${COLORS.muted("提案: " + g.suggestion)}`);
     }
     console.log();
   }
@@ -568,7 +567,7 @@ async function handleAnalyzeConversation(
   const checklist = analyzer.generateChecklist(allReqs);
   printInfo(`確認チェックリスト (${checklist.items.length}件):`);
   for (const item of checklist.items) {
-    const mark = item.required ? chalk.red("*") : chalk.dim("o");
+    const mark = item.required ? COLORS.error("*") : COLORS.muted("o");
     console.log(`  ${mark} [${item.category}] ${item.question}`);
   }
   console.log();
@@ -622,7 +621,7 @@ async function handleImplement(
   }
 
   // Step 1: AIに要件定義をまとめさせる
-  const spinner = ora({ text: "要件定義を生成中...", color: "cyan" }).start();
+  const spinner = createSpinner("要件定義を生成中...").start();
 
   let requirements: string;
   try {
@@ -642,7 +641,7 @@ async function handleImplement(
     spinner.stop();
 
     console.log();
-    console.log(chalk.green("ai > ") + requirements);
+    console.log(COLORS.success("ai > ") + requirements);
     console.log();
   } catch (error) {
     spinner.fail("要件定義の生成に失敗しました");
@@ -665,7 +664,7 @@ async function handleImplement(
   console.log();
   printInfo(`Commission '${commissionName}' を実行して実装に進みます。`);
 
-  const answer = await promptLine(chalk.cyan("実行しますか？ (y/n) > "));
+  const answer = await promptLine(COLORS.accent("実行しますか？ (y/n) > "));
 
   if (answer.trim().toLowerCase() !== "y" && answer.trim().toLowerCase() !== "yes") {
     printInfo("キャンセルしました。要件定義書は保存済みです。");
@@ -691,7 +690,7 @@ async function handleSaveConversation(
     return;
   }
 
-  const spinner = ora({ text: "要件定義書を生成中...", color: "cyan" }).start();
+  const spinner = createSpinner("要件定義書を生成中...").start();
 
   try {
     const summarizePrompt = [
@@ -715,7 +714,7 @@ async function handleSaveConversation(
     const reqId = await saveRequirements(content, process.cwd());
 
     console.log();
-    console.log(chalk.green("ai > ") + content);
+    console.log(COLORS.success("ai > ") + content);
     console.log();
     printSuccess(`要件定義書を保存しました: #${reqId}`);
     console.log();
@@ -751,7 +750,7 @@ function handleSuggest(
   }
 
   console.log();
-  console.log(chalk.bold.blue("--- 推奨提案 ---"));
+  console.log(COLORS.accent.bold("--- 推奨提案 ---"));
   console.log();
 
   const paletteSuggestions = enhancer.suggestPalette(taskDescription);
@@ -783,7 +782,7 @@ function handleSuggest(
     printInfo(`プロンプト強化提案 (${enhanced.addedContexts.length}件):`);
     for (const ctx of enhanced.addedContexts) {
       console.log(
-        `  ${chalk.yellow("+")} [${chalk.bold(ctx.category)}] ${ctx.content}`,
+        `  ${COLORS.warning("+")} [${COLORS.accent.bold(ctx.category)}] ${ctx.content}`,
       );
     }
     console.log();
@@ -845,7 +844,7 @@ async function handleSpec(
   }
 
   // Step 1: AIに会話を要約させて仕様説明を生成
-  const spinner = ora({ text: "会話を要約中...", color: "cyan" }).start();
+  const spinner = createSpinner("会話を要約中...").start();
 
   let description: string;
   try {
@@ -917,7 +916,7 @@ async function handleSpecImplement(
   }
 
   // Step 1: AIに会話を要約させて仕様説明を生成
-  const spinner = ora({ text: "会話を要約中...", color: "cyan" }).start();
+  const spinner = createSpinner("会話を要約中...").start();
 
   let description: string;
   try {
@@ -996,7 +995,7 @@ async function handleSpecialCommand(
             break;
           case "save_task": {
             // AIに要約させてタスクキューに追加
-            const spinner = ora({ text: "タスクを要約中...", color: "cyan" }).start();
+            const spinner = createSpinner("タスクを要約中...").start();
             try {
               const taskSummary = await session.summarizeForTask();
               spinner.stop();
@@ -1146,33 +1145,33 @@ async function handleSpecialCommand(
 /** コマンドヘルプを表示する */
 function printCommandHelp(): void {
   console.log();
-  console.log(chalk.bold("利用可能なコマンド:"));
-  console.log(chalk.dim("─".repeat(60)));
+  console.log(COLORS.accent.bold("利用可能なコマンド:"));
+  console.log(COLORS.muted("─".repeat(60)));
   console.log();
-  console.log(chalk.bold("  実行系:"));
-  console.log(chalk.dim("  /go [追加指示]     ") + "対話を要約 → Commission 選択 → 実行");
-  console.log(chalk.dim("  /play <タスク>     ") + "即座に default Commission でタスク実行");
-  console.log(chalk.dim("  /implement [name]  ") + "要件定義を元に Commission を実行");
-  console.log(chalk.dim("  /spec              ") + "会話を要約して仕様書3点セット生成 (requirements/design/tasks)");
-  console.log(chalk.dim("  /spec implement    ") + "仕様書生成 + そのまま実装・テスト・レビューまで実行");
+  console.log(COLORS.accent.bold("  実行系:"));
+  console.log(COLORS.muted("  /go [追加指示]     ") + "対話を要約 → Commission 選択 → 実行");
+  console.log(COLORS.muted("  /play <タスク>     ") + "即座に default Commission でタスク実行");
+  console.log(COLORS.muted("  /implement [name]  ") + "要件定義を元に Commission を実行");
+  console.log(COLORS.muted("  /spec              ") + "会話を要約して仕様書3点セット生成 (requirements/design/tasks)");
+  console.log(COLORS.muted("  /spec implement    ") + "仕様書生成 + そのまま実装・テスト・レビューまで実行");
   console.log();
-  console.log(chalk.bold("  セッション:"));
-  console.log(chalk.dim("  /resume            ") + "過去のセッション履歴を復元");
+  console.log(COLORS.accent.bold("  セッション:"));
+  console.log(COLORS.muted("  /resume            ") + "過去のセッション履歴を復元");
   console.log();
-  console.log(chalk.bold("  要件定義:"));
-  console.log(chalk.dim("  /requirements      ") + "構造化要件定義モード");
-  console.log(chalk.dim("  /analyze           ") + "会話から要件を自動抽出");
-  console.log(chalk.dim("  /save              ") + "会話内容を要件定義書として保存");
-  console.log(chalk.dim("  /suggest           ") + "Commission/Palette 提案");
+  console.log(COLORS.accent.bold("  要件定義:"));
+  console.log(COLORS.muted("  /requirements      ") + "構造化要件定義モード");
+  console.log(COLORS.muted("  /analyze           ") + "会話から要件を自動抽出");
+  console.log(COLORS.muted("  /save              ") + "会話内容を要件定義書として保存");
+  console.log(COLORS.muted("  /suggest           ") + "Commission/Palette 提案");
   console.log();
-  console.log(chalk.bold("  タスクキュー:"));
-  console.log(chalk.dim("  /queue <desc>      ") + "タスクをキューに追加");
-  console.log(chalk.dim("  /list              ") + "キュー内タスク一覧");
-  console.log(chalk.dim("  /run               ") + "キュー内タスクを実行");
+  console.log(COLORS.accent.bold("  タスクキュー:"));
+  console.log(COLORS.muted("  /queue <desc>      ") + "タスクをキューに追加");
+  console.log(COLORS.muted("  /list              ") + "キュー内タスク一覧");
+  console.log(COLORS.muted("  /run               ") + "キュー内タスクを実行");
   console.log();
-  console.log(chalk.bold("  その他:"));
-  console.log(chalk.dim("  /help              ") + "このヘルプを表示");
-  console.log(chalk.dim("  /exit              ") + "終了（アクション選択あり）");
+  console.log(COLORS.accent.bold("  その他:"));
+  console.log(COLORS.muted("  /help              ") + "このヘルプを表示");
+  console.log(COLORS.muted("  /exit              ") + "終了（アクション選択あり）");
   console.log();
 }
 
@@ -1185,17 +1184,17 @@ async function startInteractiveLoop(
   process.stdin.ref();
 
   console.log();
-  console.log(chalk.bold("ATELIER Interactive Mode"));
-  console.log(chalk.dim("─".repeat(50)));
-  console.log(chalk.dim("対話モードを開始しました。AIに質問や指示を入力してください。"));
-  console.log(chalk.dim("コマンド一覧: /help"));
-  console.log(chalk.dim("主要コマンド:"));
-  console.log(chalk.dim("  /go [追加指示]  - 対話を要約 → Commission 選択 → 実行"));
-  console.log(chalk.dim("  /play <タスク>  - 即座にタスク実行"));
-  console.log(chalk.dim("  /spec           - 仕様書3点セット生成"));
-  console.log(chalk.dim("  /resume         - 過去のセッションを復元"));
-  console.log(chalk.dim("  /exit           - 終了（アクション選択あり）"));
-  console.log(chalk.dim("─".repeat(50)));
+  console.log(COLORS.accent.bold("ATELIER Interactive Mode"));
+  console.log(COLORS.muted("─".repeat(50)));
+  console.log(COLORS.muted("対話モードを開始しました。AIに質問や指示を入力してください。"));
+  console.log(COLORS.muted("コマンド一覧: /help"));
+  console.log(COLORS.muted("主要コマンド:"));
+  console.log(COLORS.muted("  /go [追加指示]  - 対話を要約 → Commission 選択 → 実行"));
+  console.log(COLORS.muted("  /play <タスク>  - 即座にタスク実行"));
+  console.log(COLORS.muted("  /spec           - 仕様書3点セット生成"));
+  console.log(COLORS.muted("  /resume         - 過去のセッションを復元"));
+  console.log(COLORS.muted("  /exit           - 終了（アクション選択あり）"));
+  console.log(COLORS.muted("─".repeat(50)));
   console.log();
 
   let running = true;
@@ -1203,7 +1202,7 @@ async function startInteractiveLoop(
   while (running) {
     let input: string;
     try {
-      input = await promptLine(chalk.cyan("you > "));
+      input = await promptLine(COLORS.accent("you > "));
     } catch {
       // stdinが閉じた場合は終了
       break;
@@ -1223,12 +1222,12 @@ async function startInteractiveLoop(
     }
 
     // 通常のメッセージをAIに送信
-    const spinner = ora({ text: "考え中...", color: "cyan" }).start();
+    const spinner = createSpinner("考え中...").start();
     try {
       const response = await session.sendMessage(trimmed);
       spinner.stop();
       console.log();
-      console.log(chalk.green("ai > ") + response);
+      console.log(COLORS.success("ai > ") + response);
       console.log();
     } catch (error) {
       spinner.fail("応答の取得に失敗しました");
@@ -1239,7 +1238,7 @@ async function startInteractiveLoop(
     }
   }
 
-  console.log(chalk.dim("対話モードを終了しました。"));
+  console.log(COLORS.muted("対話モードを終了しました。"));
 }
 
 // ── コマンド定義 ──────────────────────────────────────────

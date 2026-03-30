@@ -4,7 +4,7 @@
  */
 
 import { Command } from "commander";
-import chalk from "chalk";
+import { COLORS } from "../theme.js";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { Stroke } from "../../domain/models/stroke.model.js";
@@ -305,23 +305,23 @@ function printFacetSection(label: string, content: string, colorFn: (s: string) 
 
 function printStrokePrompt(strokeName: string, prompt: FacetedPrompt): void {
   console.log();
-  console.log(chalk.bold.underline(`Stroke: ${strokeName}`));
+  console.log(COLORS.accent.bold.underline(`Stroke: ${strokeName}`));
   console.log();
 
   // System Prompt (Persona)
   if (prompt.facets.persona) {
-    console.log(chalk.dim("=== System Prompt ==="));
+    console.log(COLORS.muted("=== System Prompt ==="));
     console.log();
-    printFacetSection("Persona", prompt.facets.persona, chalk.blue);
+    printFacetSection("Persona", prompt.facets.persona, COLORS.info);
   }
 
   // User Prompt
-  console.log(chalk.dim("=== User Prompt ==="));
+  console.log(COLORS.muted("=== User Prompt ==="));
   console.log();
-  printFacetSection("Knowledge", prompt.facets.knowledge, chalk.green);
-  printFacetSection("Instruction", prompt.facets.instruction, chalk.white);
-  printFacetSection("Contract", prompt.facets.contract, chalk.yellow);
-  printFacetSection("Policy", prompt.facets.policy, chalk.red);
+  printFacetSection("Knowledge", prompt.facets.knowledge, COLORS.success);
+  printFacetSection("Instruction", prompt.facets.instruction, COLORS.text);
+  printFacetSection("Contract", prompt.facets.contract, COLORS.warning);
+  printFacetSection("Policy", prompt.facets.policy, COLORS.error);
 }
 
 /* ------------------------------------------------------------------ */
@@ -398,28 +398,28 @@ export function createPromptCommand(): Command {
         // Canvas は空（プレビューなので実行時の値は利用不可）
         const canvas = new Canvas();
 
-        console.log(chalk.bold(`Commission: ${commission.name}`));
+        console.log(COLORS.accent.bold(`Commission: ${commission.name}`));
         if (commission.description) {
-          console.log(chalk.dim(commission.description));
+          console.log(COLORS.muted(commission.description));
         }
-        console.log(chalk.dim(`Strokes: ${strokes.length} 件`));
+        console.log(COLORS.muted(`Strokes: ${strokes.length} 件`));
 
         for (const stroke of targetStrokes) {
           if (stroke.parallel && stroke.parallel.length > 0) {
             // 並列ストロークの表示
             console.log();
-            console.log(chalk.bold.underline(`Stroke: ${stroke.name} (parallel)`));
+            console.log(COLORS.accent.bold.underline(`Stroke: ${stroke.name} (parallel)`));
             console.log();
-            console.log(chalk.dim(`  並列サブストローク: ${stroke.parallel.length} 件`));
+            console.log(COLORS.muted(`  並列サブストローク: ${stroke.parallel.length} 件`));
             for (const sub of stroke.parallel) {
-              console.log(chalk.cyan(`  - ${sub.name} (palette: ${sub.palette})`));
-              console.log(chalk.dim(`    instruction: ${sub.instruction.trim().split("\n")[0]}`));
+              console.log(COLORS.accent(`  - ${sub.name} (palette: ${sub.palette})`));
+              console.log(COLORS.muted(`    instruction: ${sub.instruction.trim().split("\n")[0]}`));
             }
             if (stroke.inputs.length > 0) {
-              console.log(chalk.dim(`  inputs: ${stroke.inputs.join(", ")}`));
+              console.log(COLORS.muted(`  inputs: ${stroke.inputs.join(", ")}`));
             }
             if (stroke.outputs.length > 0) {
-              console.log(chalk.dim(`  outputs: ${stroke.outputs.join(", ")}`));
+              console.log(COLORS.muted(`  outputs: ${stroke.outputs.join(", ")}`));
             }
             console.log();
           } else {
