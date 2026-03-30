@@ -13,6 +13,7 @@ import type { CommissionDefinition, RunOptions, StudioConfig, MediumConfig } fro
 import type { TypedEventEmitter, AtelierEvents } from "../../infrastructure/event-bus/event-emitter.js";
 import { readTextFile, fileExists, writeTextFile } from "../../infrastructure/fs/file-system.js";
 import { CommissionError, ConfigError } from "../../domain/errors/atelier-error.js";
+import { getBuiltinCommissionPath } from "../../builtin/index.js";
 
 /** Port: 設定の読み込み */
 export interface ConfigPort {
@@ -192,14 +193,21 @@ export class CommissionRunUseCase {
       `${name}.yaml`,
     );
 
+    // プロジェクトの .atelier/commissions/ を優先し、なければビルトインにフォールバック
+    let resolvedPath = commissionPath;
     if (!(await fileExists(commissionPath))) {
-      throw new CommissionError(
-        name,
-        `Commission ファイルが見つかりません: ${commissionPath}`,
-      );
+      const builtinPath = getBuiltinCommissionPath(name);
+      if (await fileExists(builtinPath)) {
+        resolvedPath = builtinPath;
+      } else {
+        throw new CommissionError(
+          name,
+          `Commission ファイルが見つかりません: ${commissionPath}`,
+        );
+      }
     }
 
-    const content = await readTextFile(commissionPath);
+    const content = await readTextFile(resolvedPath);
     const parsed = parseYaml(content) as Record<string, unknown>;
 
     if (!parsed || typeof parsed !== "object") {
