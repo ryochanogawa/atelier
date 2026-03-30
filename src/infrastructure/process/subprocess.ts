@@ -22,9 +22,41 @@ export interface SubprocessResult {
   readonly duration: number;
 }
 
+/** SIGTERM後に強制終了するまでの待機時間 (ms) */
+const SIGKILL_DELAY_MS = 5000;
+
+/**
+ * プロセスにSIGTERMを送信し、指定時間内に終了しない場合はSIGKILLで強制終了する。
+ */
+async function killGracefully(proc: ResultPromise): Promise<void> {
+  try {
+    proc.kill("SIGTERM");
+  } catch {
+    // プロセスがすでに終了している場合は無視
+    return;
+  }
+
+  const killTimer = setTimeout(() => {
+    try {
+      proc.kill("SIGKILL");
+    } catch {
+      // プロセスがすでに終了している場合は無視
+    }
+  }, SIGKILL_DELAY_MS);
+
+  try {
+    await proc;
+  } catch {
+    // タイムアウト後のプロセス終了によるエラーは無視
+  } finally {
+    clearTimeout(killTimer);
+  }
+}
+
 /**
  * コマンドを実行し、結果を返す。
  * タイムアウトおよびリトライをサポートする。
+ * タイムアウト時はSIGTERMを送信し、5秒後もプロセスが生存していればSIGKILLで強制終了する。
  */
 export async function runSubprocess(
   command: string,
@@ -49,13 +81,29 @@ export async function runSubprocess(
       const execaOptions: ExecaOptions = {
         cwd,
         env,
-        timeout,
         reject: false,
         ...(stdin !== undefined ? { input: stdin } : {}),
       };
 
-      const result = await execa(command, [...args], execaOptions);
+      const proc = execa(command, [...args], execaOptions);
+
+      const timeoutHandle = setTimeout(() => {
+        void killGracefully(proc);
+      }, timeout);
+
+      let result: Awaited<typeof proc>;
+      try {
+        result = await proc;
+      } finally {
+        clearTimeout(timeoutHandle);
+      }
+
       const duration = Date.now() - startTime;
+
+      // タイムアウトによる強制終了を検出してエラーとして扱う
+      if (result.timedOut === true) {
+        throw new Error(`Process timed out after ${timeout}ms: ${command}`);
+      }
 
       return {
         stdout: String(result.stdout ?? ""),

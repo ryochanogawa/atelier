@@ -1,0 +1,42 @@
+name: spec-requirements-output
+description: 要件定義書。非エンジニアが読んでもわかる形式。
+
+format: |
+  # 要件定義: {機能名}
+
+  ## 背景
+  （なぜ必要か。1-2段落で平易に）
+
+  ## ゴール
+  - 箇条書きで実現すること
+
+  ## 要件一覧
+
+  | # | 要件 | 優先度 | 完了条件 |
+  |---|------|--------|---------|
+  | 1 | ... | Must/Should/Could | ... |
+
+  ## 操作の流れ
+
+  ```mermaid
+  sequenceDiagram
+      actor User
+      ...
+  ```
+
+  ## 対象外
+  - 今回やらないこと
+
+  ## 未決事項
+  - 確認が必要な点（あれば）
+
+fields:
+  - name: feature_name
+    type: string
+    required: true
+    description: 機能名
+
+  - name: requirements
+    type: array
+    required: true
+    description: 要件リスト

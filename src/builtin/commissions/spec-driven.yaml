@@ -1,0 +1,74 @@
+name: spec-driven
+description: 仕様駆動開発（要件→設計→タスク→実装→テスト→レビュー）
+
+strokes:
+  - name: requirements
+    palette: spec-writer
+    instruction: spec-requirements
+    contract: spec-requirements-output
+    allow_edit: true
+    outputs:
+      - requirements
+    transitions:
+      - condition: default
+        next: design
+
+  - name: design
+    palette: spec-writer
+    instruction: spec-design
+    contract: spec-design-output
+    allow_edit: true
+    inputs:
+      - requirements
+    outputs:
+      - design
+    transitions:
+      - condition: default
+        next: tasks
+
+  - name: tasks
+    palette: spec-writer
+    instruction: spec-tasks
+    contract: spec-tasks-output
+    allow_edit: true
+    inputs:
+      - requirements
+      - design
+    outputs:
+      - tasks
+    transitions:
+      - condition: default
+        next: implement
+
+  - name: implement
+    palette: coder
+    instruction: implement
+    allow_edit: true
+    inputs:
+      - tasks
+      - design
+    outputs:
+      - implementation
+    transitions:
+      - condition: default
+        next: test
+
+  - name: test
+    palette: tester
+    instruction: test
+    inputs:
+      - implementation
+    outputs:
+      - test_results
+    transitions:
+      - condition: default
+        next: review
+
+  - name: review
+    palette: reviewer
+    instruction: review
+    inputs:
+      - implementation
+      - test_results
+    outputs:
+      - review_result

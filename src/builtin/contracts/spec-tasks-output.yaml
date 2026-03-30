@@ -1,0 +1,24 @@
+name: spec-tasks-output
+description: 実装タスク。チェックボックス + 要件参照。
+
+format: |
+  # 実装タスク: {機能名}
+
+  - [ ] 1. {タスク名}
+    - {具体作業}
+    - _要件: N_ / _依存: N_
+
+  - [ ] 2. {タスク名}
+    - {具体作業}
+    - _要件: N_ / _依存: 1_
+
+fields:
+  - name: feature_name
+    type: string
+    required: true
+    description: 機能名
+
+  - name: tasks
+    type: array
+    required: true
+    description: タスクリスト

@@ -24,6 +24,7 @@ import { createPromptCommand } from "./commands/prompt.cmd.js";
 import { createRunCommand } from "./commands/run.cmd.js";
 import { createCatalogCommand } from "./commands/catalog.cmd.js";
 import { createWatchCommand } from "./commands/watch.cmd.js";
+import { createSpecCommand } from "./commands/spec.cmd.js";
 import { setOutputFormat } from "./output.js";
 
 const program = new Command();
@@ -63,5 +64,6 @@ program.addCommand(createSuggestCommand());
 program.addCommand(createPromptCommand());
 program.addCommand(createCatalogCommand());
 program.addCommand(createWatchCommand());
+program.addCommand(createSpecCommand());
 
 program.parse(process.argv);

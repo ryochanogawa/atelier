@@ -27,7 +27,7 @@ import { IntentEnhancerService } from "../../domain/services/intent-enhancer.ser
 import { RequirementsStoreAdapter } from "../../adapters/config/requirements-store.adapter.js";
 import { resolveAtelierPath } from "../../shared/utils.js";
 import { REQUIREMENTS_DIR, COMMISSIONS_DIR } from "../../shared/constants.js";
-import { writeTextFile, readTextFile, listFiles, listDirs } from "../../infrastructure/fs/file-system.js";
+import { writeTextFile, readTextFile, listFiles, listDirs, ensureDir } from "../../infrastructure/fs/file-system.js";
 import { CommissionRunUseCase } from "../../application/use-cases/run-commission.use-case.js";
 import { listBuiltinCommissions } from "../../builtin/index.js";
 import { createEventBus } from "../../infrastructure/event-bus/event-emitter.js";
@@ -790,6 +790,191 @@ function handleSuggest(
   }
 }
 
+// ── /spec コマンド用ヘルパー ──────────────────────────────
+
+/** spec ディレクトリのパスを返す */
+function specsDirPath(projectPath: string): string {
+  return path.join(resolveAtelierPath(projectPath), "specs");
+}
+
+/** 説明文からスラッグを生成する */
+function toSpecSlug(description: string): string {
+  return description
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, "")
+    .trim()
+    .replace(/[\s_]+/g, "-")
+    .replace(/-+/g, "-")
+    .slice(0, 40);
+}
+
+/** 次の Spec ID を取得する */
+async function nextSpecId(projectPath: string): Promise<number> {
+  const dir = specsDirPath(projectPath);
+  try {
+    const entries = await listDirs(dir);
+    const ids = entries
+      .map((e) => parseInt(path.basename(e), 10))
+      .filter((n) => !isNaN(n));
+    return ids.length > 0 ? Math.max(...ids) + 1 : 1;
+  } catch {
+    return 1;
+  }
+}
+
+/** spec.json を保存する */
+async function saveSpecJson(
+  specDir: string,
+  spec: { id: number; name: string; description: string; phase: string; createdAt: string; updatedAt: string },
+): Promise<void> {
+  spec.updatedAt = new Date().toISOString();
+  await writeTextFile(path.join(specDir, "spec.json"), JSON.stringify(spec, null, 2));
+}
+
+// ── /spec コマンド: 仕様書3点セット生成 ──────────────────
+
+async function handleSpec(
+  session: InteractiveSessionUseCase,
+): Promise<void> {
+  const history = session.getHistory();
+
+  if (history.length === 0) {
+    printWarning("会話履歴がありません。先にAIと会話してください。");
+    console.log();
+    return;
+  }
+
+  // Step 1: AIに会話を要約させて仕様説明を生成
+  const spinner = ora({ text: "会話を要約中...", color: "cyan" }).start();
+
+  let description: string;
+  try {
+    const summarizePrompt = [
+      "これまでの会話内容を1〜2文の簡潔な日本語で要約してください。",
+      "仕様書のタイトルや機能概要として使えるよう、装飾なしのプレーンテキストで出力してください。",
+    ].join("\n");
+    description = await session.sendMessage(summarizePrompt);
+    description = description.trim();
+    spinner.stop();
+
+    console.log();
+    printInfo(`仕様説明: ${description}`);
+    console.log();
+  } catch (error) {
+    spinner.fail("要約の生成に失敗しました");
+    printError(error instanceof Error ? error.message : String(error));
+    return;
+  }
+
+  // Step 2: spec ディレクトリを作成し spec.json を保存
+  const projectPath = process.cwd();
+  let specDirName: string;
+  let specDir: string;
+  let specId: number;
+
+  try {
+    specId = await nextSpecId(projectPath);
+    const slug = toSpecSlug(description);
+    specDirName = `${specId}-${slug}`;
+    specDir = path.join(specsDirPath(projectPath), specDirName);
+    await ensureDir(specDir);
+
+    const specData = {
+      id: specId,
+      name: slug,
+      description,
+      phase: "created",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await saveSpecJson(specDir, specData);
+  } catch (error) {
+    printError(`Spec ディレクトリの作成に失敗しました: ${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
+
+  // Step 3: spec-driven Commission で requirements → design → tasks を実行
+  printInfo("spec-driven Commission を実行中 (requirements → design → tasks)...");
+  console.log();
+
+  await executeCommission(projectPath, "spec-driven", description);
+
+  printSuccess(`✓ 仕様書を生成しました: .atelier/specs/${specDirName}/`);
+  console.log();
+}
+
+// ── /spec implement コマンド: 仕様書生成 + 実装 ─────────
+
+async function handleSpecImplement(
+  session: InteractiveSessionUseCase,
+): Promise<void> {
+  const history = session.getHistory();
+
+  if (history.length === 0) {
+    printWarning("会話履歴がありません。先にAIと会話してください。");
+    console.log();
+    return;
+  }
+
+  // Step 1: AIに会話を要約させて仕様説明を生成
+  const spinner = ora({ text: "会話を要約中...", color: "cyan" }).start();
+
+  let description: string;
+  try {
+    const summarizePrompt = [
+      "これまでの会話内容を1〜2文の簡潔な日本語で要約してください。",
+      "仕様書のタイトルや機能概要として使えるよう、装飾なしのプレーンテキストで出力してください。",
+    ].join("\n");
+    description = await session.sendMessage(summarizePrompt);
+    description = description.trim();
+    spinner.stop();
+
+    console.log();
+    printInfo(`仕様説明: ${description}`);
+    console.log();
+  } catch (error) {
+    spinner.fail("要約の生成に失敗しました");
+    printError(error instanceof Error ? error.message : String(error));
+    return;
+  }
+
+  // Step 2: spec ディレクトリを作成し spec.json を保存
+  const projectPath = process.cwd();
+  let specDirName: string;
+  let specDir: string;
+  let specId: number;
+
+  try {
+    specId = await nextSpecId(projectPath);
+    const slug = toSpecSlug(description);
+    specDirName = `${specId}-${slug}`;
+    specDir = path.join(specsDirPath(projectPath), specDirName);
+    await ensureDir(specDir);
+
+    const specData = {
+      id: specId,
+      name: slug,
+      description,
+      phase: "created",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await saveSpecJson(specDir, specData);
+  } catch (error) {
+    printError(`Spec ディレクトリの作成に失敗しました: ${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
+
+  // Step 3: spec-driven Commission で全6ストローク実行（requirements → design → tasks → implement → test → review）
+  printInfo("spec-driven Commission を実行中 (requirements → design → tasks → implement → test → review)...");
+  console.log();
+
+  await executeCommission(projectPath, "spec-driven", description);
+
+  printSuccess(`✓ 仕様書を生成し実装が完了しました: .atelier/specs/${specDirName}/`);
+  console.log();
+}
+
 // ── 特殊コマンドハンドラ ──────────────────────────────────
 
 async function handleSpecialCommand(
@@ -935,6 +1120,16 @@ async function handleSpecialCommand(
       return true;
     }
 
+    case "/spec": {
+      const subCmd = parts[1];
+      if (subCmd === "implement") {
+        await handleSpecImplement(session);
+      } else {
+        await handleSpec(session);
+      }
+      return true;
+    }
+
     case "/help": {
       printCommandHelp();
       return true;
@@ -958,6 +1153,8 @@ function printCommandHelp(): void {
   console.log(chalk.dim("  /go [追加指示]     ") + "対話を要約 → Commission 選択 → 実行");
   console.log(chalk.dim("  /play <タスク>     ") + "即座に default Commission でタスク実行");
   console.log(chalk.dim("  /implement [name]  ") + "要件定義を元に Commission を実行");
+  console.log(chalk.dim("  /spec              ") + "会話を要約して仕様書3点セット生成 (requirements/design/tasks)");
+  console.log(chalk.dim("  /spec implement    ") + "仕様書生成 + そのまま実装・テスト・レビューまで実行");
   console.log();
   console.log(chalk.bold("  セッション:"));
   console.log(chalk.dim("  /resume            ") + "過去のセッション履歴を復元");
@@ -995,6 +1192,7 @@ async function startInteractiveLoop(
   console.log(chalk.dim("主要コマンド:"));
   console.log(chalk.dim("  /go [追加指示]  - 対話を要約 → Commission 選択 → 実行"));
   console.log(chalk.dim("  /play <タスク>  - 即座にタスク実行"));
+  console.log(chalk.dim("  /spec           - 仕様書3点セット生成"));
   console.log(chalk.dim("  /resume         - 過去のセッションを復元"));
   console.log(chalk.dim("  /exit           - 終了（アクション選択あり）"));
   console.log(chalk.dim("─".repeat(50)));

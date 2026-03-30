@@ -1,0 +1,45 @@
+name: spec-design-output
+description: 技術設計書。要件との対応を明示。
+
+format: |
+  # 技術設計: {機能名}
+
+  ## 方針
+  （1-2文で要約）
+
+  ## 要件→設計マッピング
+
+  | 要件# | 設計要素 | 変更ファイル |
+  |--------|---------|-------------|
+
+  ## 構成図
+
+  ```mermaid
+  graph LR
+      ...
+  ```
+
+  ## 変更ファイル一覧
+
+  | ファイル | 変更内容 | 新規/修正 |
+  |---------|---------|----------|
+
+  ## データの流れ
+
+  ## エラー時の動作
+
+  | エラー | 対処 |
+  |--------|------|
+
+  ## テスト方針
+
+fields:
+  - name: feature_name
+    type: string
+    required: true
+    description: 機能名
+
+  - name: mapping
+    type: array
+    required: true
+    description: 要件→設計マッピング
