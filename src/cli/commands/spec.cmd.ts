@@ -32,7 +32,7 @@ import {
 } from "../output.js";
 import type { ConfigPort, VcsPort, LoggerPort } from "../../application/use-cases/run-commission.use-case.js";
 import type { MediumRegistry } from "../../application/services/commission-runner.service.js";
-import type { StudioConfig, MediumConfig } from "../../shared/types.js";
+import type { StudioConfig, MediumConfig, PaletteProviderConfig } from "../../shared/types.js";
 import { simpleGit } from "simple-git";
 
 /** Spec のフェーズ */
@@ -125,10 +125,22 @@ function createConfigPort(): ConfigPort {
       const content = await readTextFile(configPath);
       const parsed = parseYaml(content) as Record<string, unknown>;
       const studio = parsed.studio as Record<string, unknown>;
+
+      // palette_providers の読み込み
+      const rawPaletteProviders = (parsed.palette_providers ?? {}) as Record<string, Record<string, unknown>>;
+      const paletteProviders: Record<string, PaletteProviderConfig> = {};
+      for (const [name, config] of Object.entries(rawPaletteProviders)) {
+        paletteProviders[name] = {
+          medium: config.medium as string | undefined,
+          model: config.model as string | undefined,
+        };
+      }
+
       return {
         defaultMedium: (studio?.default_medium as string) ?? "claude-code",
         language: (studio?.language as string) ?? "ja",
         logLevel: (studio?.log_level as StudioConfig["logLevel"]) ?? "info",
+        ...(Object.keys(paletteProviders).length > 0 ? { paletteProviders } : {}),
       };
     },
     async loadMediaConfig(projectPath: string): Promise<Record<string, MediumConfig>> {
@@ -325,7 +337,7 @@ export function createSpecCommand(): Command {
 
         // 2. Medium 呼び出し（spec-requirements stroke だけの Commission を使う）
         //    spec_dir を canvas に渡して保存先を伝える
-        await runCommission(projectPath, "spec-driven", {
+        await runCommission(projectPath, "spec-requirements", {
           requirements: description,
           spec_dir: dirName,
         });
@@ -377,7 +389,7 @@ export function createSpecCommand(): Command {
         const specData = await loadSpecJson(dir);
         const dirName = path.basename(dir);
 
-        await runCommission(projectPath, "spec-driven", {
+        await runCommission(projectPath, "spec-design", {
           requirements,
           spec_dir: dirName,
         });
@@ -436,7 +448,7 @@ export function createSpecCommand(): Command {
         const specData = await loadSpecJson(dir);
         const dirName = path.basename(dir);
 
-        await runCommission(projectPath, "spec-driven", {
+        await runCommission(projectPath, "spec-tasks", {
           requirements,
           design,
           spec_dir: dirName,

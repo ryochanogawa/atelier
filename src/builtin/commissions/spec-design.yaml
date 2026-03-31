@@ -1,0 +1,13 @@
+name: spec-design
+description: 仕様駆動開発 — 技術設計のみ
+
+strokes:
+  - name: design
+    palette: spec-writer
+    instruction: spec-design
+    contract: spec-design-output
+    allow_edit: true
+    inputs:
+      - requirements
+    outputs:
+      - design

@@ -1,0 +1,14 @@
+name: spec-tasks
+description: 仕様駆動開発 — タスク生成のみ
+
+strokes:
+  - name: tasks
+    palette: spec-writer
+    instruction: spec-tasks
+    contract: spec-tasks-output
+    allow_edit: true
+    inputs:
+      - requirements
+      - design
+    outputs:
+      - tasks

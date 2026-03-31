@@ -1,0 +1,38 @@
+name: spec-plan
+description: 仕様駆動開発 — 要件定義→設計→タスク生成まで（実装は含まない）
+
+strokes:
+  - name: requirements
+    palette: spec-writer
+    instruction: spec-requirements
+    contract: spec-requirements-output
+    allow_edit: true
+    outputs:
+      - requirements
+    transitions:
+      - condition: default
+        next: design
+
+  - name: design
+    palette: spec-writer
+    instruction: spec-design
+    contract: spec-design-output
+    allow_edit: true
+    inputs:
+      - requirements
+    outputs:
+      - design
+    transitions:
+      - condition: default
+        next: tasks
+
+  - name: tasks
+    palette: spec-writer
+    instruction: spec-tasks
+    contract: spec-tasks-output
+    allow_edit: true
+    inputs:
+      - requirements
+      - design
+    outputs:
+      - tasks

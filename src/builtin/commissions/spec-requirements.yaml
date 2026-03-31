@@ -1,0 +1,11 @@
+name: spec-requirements
+description: 仕様駆動開発 — 要件定義のみ
+
+strokes:
+  - name: requirements
+    palette: spec-writer
+    instruction: spec-requirements
+    contract: spec-requirements-output
+    allow_edit: true
+    outputs:
+      - requirements
