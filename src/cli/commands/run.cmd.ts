@@ -142,6 +142,15 @@ function createVcsPort(worktreeDir?: string): VcsPort {
       }
 
       await git.raw(["worktree", "add", worktreePath, branchName]);
+
+      // 派生元ブランチを記録（merge 時に使用）
+      const fs = await import("node:fs/promises");
+      await fs.writeFile(
+        path.join(worktreePath, ".atelier-parent-branch"),
+        currentBranch,
+        "utf-8",
+      );
+
       return worktreePath;
     },
     async removeWorktree(_worktreePath: string): Promise<void> {

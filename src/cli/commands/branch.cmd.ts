@@ -174,9 +174,9 @@ export function createBranchCommand(): Command {
 
       try {
         const useCase = new ManageBranchesUseCase(projectPath);
-        await useCase.mergeBranch(name);
+        const mergedTo = await useCase.mergeBranch(name);
         spinner.stop();
-        printSuccess(`ブランチ '${name}' をメインブランチにマージしました`);
+        printSuccess(`ブランチ '${name}' を '${mergedTo}' にマージしました`);
         printInfo("worktree とブランチを削除しました");
       } catch (error) {
         spinner.fail("マージに失敗しました");

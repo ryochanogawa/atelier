@@ -59,15 +59,15 @@ export class ManageBranchesUseCase {
   }
 
   /** 指定ブランチをメインブランチにマージし、worktree + ブランチを削除する */
-  async mergeBranch(name: string): Promise<void> {
+  async mergeBranch(name: string): Promise<string> {
     const branchName = this.ensurePrefix(name);
 
     // 現在のブランチを取得
     const currentBranch = await this.getCurrentBranch();
 
-    // メインブランチにチェックアウト
-    const mainBranch = await this.getMainBranch();
-    await this.git.checkout(mainBranch);
+    // マージ先を決定: 派生元ブランチ（atelier/ ブランチの親）を特定する
+    const mergeTo = await this.getParentBranch(branchName, currentBranch);
+    await this.git.checkout(mergeTo);
 
     try {
       await this.git.merge([branchName]);
@@ -89,6 +89,8 @@ export class ManageBranchesUseCase {
     } catch {
       // ブランチ削除に失敗しても続行（既にマージ済み）
     }
+
+    return mergeTo;
   }
 
   /** 指定ブランチを削除する（worktreeも削除） */
@@ -142,6 +144,40 @@ export class ManageBranchesUseCase {
     } catch {
       return "master";
     }
+  }
+
+  /**
+   * atelier/ ブランチの派生元ブランチを特定する。
+   * 1. worktree内の .atelier-parent-branch ファイルを読む（確実）
+   * 2. なければ現在のブランチにフォールバック
+   */
+  private async getParentBranch(atelierBranch: string, currentBranch: string): Promise<string> {
+    // worktree パスを特定
+    const worktreeMap = await this.getWorktreeMap();
+    const fullRef = `refs/heads/${atelierBranch}`;
+    const worktreePath = worktreeMap.get(fullRef) ?? worktreeMap.get(atelierBranch);
+
+    if (worktreePath) {
+      try {
+        const fs = await import("node:fs/promises");
+        const parentBranch = (await fs.readFile(
+          path.join(worktreePath, ".atelier-parent-branch"),
+          "utf-8",
+        )).trim();
+        if (parentBranch) {
+          // 派生元ブランチがまだ存在するか確認
+          const branches = await this.git.branchLocal();
+          if (branches.all.includes(parentBranch)) {
+            return parentBranch;
+          }
+        }
+      } catch {
+        // ファイルがない場合はフォールバック
+      }
+    }
+
+    // フォールバック: 現在のブランチ
+    return currentBranch;
   }
 
   /** atelier/ プレフィックスを付与する */

@@ -135,15 +135,22 @@ export class DirectRunUseCase {
     // 6. シェルコマンドで実行
     const command = mediumConfig.command;
     const args = [...mediumConfig.args];
+    const isCodex = command === "codex" || mediumName === "codex";
 
-    // -p (--print) がなければ追加
-    if (!args.includes("--print") && !args.includes("-p")) {
-      args.unshift("-p");
-    }
-
-    // --dangerously-skip-permissions がなければ追加
-    if (!args.includes("--dangerously-skip-permissions")) {
-      args.push("--dangerously-skip-permissions");
+    if (isCodex) {
+      // Codex: `codex exec --full-auto` で非対話実行
+      if (!args.includes("exec")) {
+        args.unshift("exec");
+      }
+      args.push("--full-auto");
+    } else {
+      // Claude Code（デフォルト）
+      if (!args.includes("--print") && !args.includes("-p")) {
+        args.unshift("-p");
+      }
+      if (!args.includes("--dangerously-skip-permissions")) {
+        args.push("--dangerously-skip-permissions");
+      }
     }
 
     const escapeShell = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
