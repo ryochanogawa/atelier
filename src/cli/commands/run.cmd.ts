@@ -376,7 +376,7 @@ export async function executeTask(
       const result = await useCase.execute(commissionName, projectPath, {
         dryRun: opts.dryRun ?? false,
         medium: opts.medium,
-        initialCanvas: { requirements: task },
+        task,
       });
 
       spinner.stop();

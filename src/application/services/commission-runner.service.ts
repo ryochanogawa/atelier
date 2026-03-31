@@ -547,23 +547,45 @@ export class CommissionRunnerService {
     });
 
     const args = [...mediumConfig.args];
-    // -p (--print) がなければ追加（Commission は常に非インタラクティブ）
-    if (!args.includes("--print") && !args.includes("-p")) {
-      args.unshift("-p");
-    }
-    // stroke 固有のモデル指定
-    if (stroke.model) {
-      args.push("--model", stroke.model);
-    }
-    // stroke 固有のツールホワイトリスト（allowedTools が明示指定されている場合はそちらを優先）
-    if (stroke.allowedTools && stroke.allowedTools.length > 0) {
-      args.push("--allowedTools", ...stroke.allowedTools);
-    } else if (stroke.permissionMode && !args.includes("--allowedTools")) {
-      // permission_mode による許可ツール決定
-      args.push("--allowedTools", ...this.resolvePermissionModeTools(stroke.permissionMode));
-    } else if (stroke.allowEdit && !args.includes("--allowedTools")) {
-      // allow_edit の場合、ファイル編集ツールを許可（後方互換）
-      args.push("--allowedTools", "Edit", "Write", "Read", "Glob", "Grep", "Bash");
+    const isCodex = mediumConfig.command === "codex" || stroke.medium === "codex";
+    const isGemini = mediumConfig.command === "gemini" || stroke.medium === "gemini";
+
+    if (isCodex) {
+      // Codex: `codex exec` サブコマンドで非対話実行
+      if (!args.includes("exec")) {
+        args.unshift("exec");
+      }
+      if (stroke.allowEdit) {
+        args.push("--full-auto");
+      }
+      if (stroke.model) {
+        args.push("--model", stroke.model);
+      }
+    } else if (isGemini) {
+      // Gemini: 独自の引数体系
+      if (stroke.model) {
+        args.push("--model", stroke.model);
+      }
+    } else {
+      // Claude Code（デフォルト）
+      // -p (--print) がなければ追加（Commission は常に非インタラクティブ）
+      if (!args.includes("--print") && !args.includes("-p")) {
+        args.unshift("-p");
+      }
+      // stroke 固有のモデル指定
+      if (stroke.model) {
+        args.push("--model", stroke.model);
+      }
+      // stroke 固有のツールホワイトリスト（allowedTools が明示指定されている場合はそちらを優先）
+      if (stroke.allowedTools && stroke.allowedTools.length > 0) {
+        args.push("--allowedTools", ...stroke.allowedTools);
+      } else if (stroke.permissionMode && !args.includes("--allowedTools")) {
+        // permission_mode による許可ツール決定
+        args.push("--allowedTools", ...this.resolvePermissionModeTools(stroke.permissionMode));
+      } else if (stroke.allowEdit && !args.includes("--allowedTools")) {
+        // allow_edit の場合、ファイル編集ツールを許可（後方互換）
+        args.push("--allowedTools", "Edit", "Write", "Read", "Glob", "Grep", "Bash");
+      }
     }
 
     // Persona（system prompt）をプロンプト本文の先頭に含める
@@ -851,16 +873,30 @@ export class CommissionRunnerService {
       await fs.writeFile(promptFile, fullPrompt, "utf-8");
 
       const args = [...mediumConfig.args];
-      if (!args.includes("--print") && !args.includes("-p")) {
-        args.unshift("-p");
-      }
-      if (stroke.model) {
-        args.push("--model", stroke.model);
-      }
-      if (stroke.allowedTools && stroke.allowedTools.length > 0) {
-        args.push("--allowedTools", ...stroke.allowedTools);
-      } else if (stroke.allowEdit && !args.includes("--allowedTools")) {
-        args.push("--allowedTools", "Edit", "Write", "Read", "Glob", "Grep", "Bash");
+      const isCodex = mediumConfig.command === "codex" || stroke.medium === "codex";
+
+      if (isCodex) {
+        if (!args.includes("exec")) {
+          args.unshift("exec");
+        }
+        if (stroke.allowEdit) {
+          args.push("--full-auto");
+        }
+        if (stroke.model) {
+          args.push("--model", stroke.model);
+        }
+      } else {
+        if (!args.includes("--print") && !args.includes("-p")) {
+          args.unshift("-p");
+        }
+        if (stroke.model) {
+          args.push("--model", stroke.model);
+        }
+        if (stroke.allowedTools && stroke.allowedTools.length > 0) {
+          args.push("--allowedTools", ...stroke.allowedTools);
+        } else if (stroke.allowEdit && !args.includes("--allowedTools")) {
+          args.push("--allowedTools", "Edit", "Write", "Read", "Glob", "Grep", "Bash");
+        }
       }
 
       const escapeShell = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
@@ -1130,16 +1166,30 @@ export class CommissionRunnerService {
     allowedTools?: readonly string[],
   ): Promise<{ stdout: string; stderr: string; exitCode: number; duration: number }> {
     const args = [...mediumConfig.args];
-    if (!args.includes("--print") && !args.includes("-p")) {
-      args.unshift("-p");
-    }
-    if (model) {
-      args.push("--model", model);
-    }
-    if (allowedTools && allowedTools.length > 0) {
-      args.push("--allowedTools", ...allowedTools);
-    } else if (allowEdit && !args.includes("--allowedTools")) {
-      args.push("--allowedTools", "Edit", "Write", "Read", "Glob", "Grep", "Bash");
+    const isCodex = mediumConfig.command === "codex" || mediumName === "codex";
+
+    if (isCodex) {
+      if (!args.includes("exec")) {
+        args.unshift("exec");
+      }
+      if (allowEdit) {
+        args.push("--full-auto");
+      }
+      if (model) {
+        args.push("--model", model);
+      }
+    } else {
+      if (!args.includes("--print") && !args.includes("-p")) {
+        args.unshift("-p");
+      }
+      if (model) {
+        args.push("--model", model);
+      }
+      if (allowedTools && allowedTools.length > 0) {
+        args.push("--allowedTools", ...allowedTools);
+      } else if (allowEdit && !args.includes("--allowedTools")) {
+        args.push("--allowedTools", "Edit", "Write", "Read", "Glob", "Grep", "Bash");
+      }
     }
 
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), tmpPrefix));
@@ -1455,7 +1505,7 @@ export class CommissionRunnerService {
         return runtimeVars[key];
       }
       const value = canvas.get<string>(key);
-      return value !== undefined ? value : `{{${key}}}`;
+      return value !== undefined ? value : "";
     });
   }
 

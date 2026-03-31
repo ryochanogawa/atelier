@@ -1,6 +1,6 @@
 /**
  * OpenAI Codex CLI アダプター
- * `codex --quiet --approval-mode` を使用してCodexを呼び出す。
+ * `codex exec` を使用してCodexを非対話モードで呼び出す。
  * プロンプトは stdin 経由で渡し、プロセス引数への露出を防止する。
  */
 
@@ -66,14 +66,20 @@ export class CodexAdapter implements MediumPort {
   }
 
   private buildArgs(request: MediumRequest): string[] {
-    const approvalMode = request.allowEdit ? "auto-edit" : "suggest";
-    const args: string[] = ["--quiet", "--approval-mode", approvalMode];
+    // `codex exec` サブコマンドで非対話実行
+    const args: string[] = ["exec"];
+
+    if (request.allowEdit) {
+      args.push("--full-auto");
+    }
 
     if (request.extraArgs) {
       args.push(...request.extraArgs);
     }
 
-    // プロンプトは stdin から読み取る
+    // プロンプトは stdin から読み取る（`-` を指定）
+    args.push("-");
+
     return args;
   }
 
