@@ -892,11 +892,11 @@ async function handleSpec(
     return;
   }
 
-  // Step 3: spec-driven Commission で requirements → design → tasks を実行
-  printInfo("spec-driven Commission を実行中 (requirements → design → tasks)...");
+  // Step 3: spec-plan Commission で requirements → design → tasks を実行（実装は含まない）
+  printInfo("spec-plan Commission を実行中 (requirements → design → tasks)...");
   console.log();
 
-  await executeCommission(projectPath, "spec-driven", description);
+  await executeCommission(projectPath, "spec-plan", description);
 
   printSuccess(`✓ 仕様書を生成しました: .atelier/specs/${specDirName}/`);
   console.log();
