@@ -5,7 +5,15 @@
 
 import { Command } from "commander";
 import path from "node:path";
-import { COLORS } from "../theme.js";
+import { getColorFn, printInfo, printTable } from "../output.js";
+
+const COLORS = {
+  get accent() { return getColorFn("accent"); },
+  get muted() { return getColorFn("muted"); },
+  get success() { return getColorFn("success"); },
+  get warning() { return getColorFn("warning"); },
+  get error() { return getColorFn("error"); },
+} as const;
 import {
   listBuiltinPalettes,
   listBuiltinPolicies,
@@ -21,7 +29,6 @@ import {
   CONTRACTS_DIR,
   COMMISSIONS_DIR,
 } from "../../shared/constants.js";
-import { printInfo, printTable } from "../output.js";
 
 /** カテゴリ定義 */
 interface CategoryDef {

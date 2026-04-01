@@ -14,7 +14,10 @@ import {
   printProgressBar,
   createSpinner,
 } from "../../../src/cli/output.js";
-import { SYMBOLS, BORDERS } from "../../../src/cli/theme.js";
+import { BIOHAZARD_THEME } from "../../../src/adapters/theme/biohazard.adapter.js";
+
+const SYMBOLS = BIOHAZARD_THEME.symbols;
+const BORDERS = BIOHAZARD_THEME.borders;
 import type { RunResultDto } from "../../../src/application/dto/run-result.dto.js";
 
 const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});

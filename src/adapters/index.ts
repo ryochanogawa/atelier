@@ -47,3 +47,10 @@ export {
   ConsoleLoggerAdapter,
   type LoggerPort,
 } from "./logger/index.js";
+
+// Theme adapters
+export {
+  BIOHAZARD_THEME,
+  loadNpmTheme,
+  ThemePortSchema,
+} from "./theme/index.js";

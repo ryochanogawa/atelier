@@ -53,6 +53,7 @@ export const StudioConfigSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   version: z.string().default("1.0"),
+  theme: z.string().optional(),
   mediums: z.array(MediumConfigSchema).min(1),
   strokes: z.array(StrokeConfigSchema).min(1),
   policies: z.array(z.string()).optional(),

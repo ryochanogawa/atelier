@@ -4,9 +4,14 @@
  */
 
 import { Command } from "commander";
-import { COLORS } from "../theme.js";
 import { IntentEnhancerService } from "../../domain/services/intent-enhancer.service.js";
-import { printSuccess, printInfo, printWarning, printTable } from "../output.js";
+import { printSuccess, printInfo, printWarning, printTable, getColorFn } from "../output.js";
+
+const COLORS = {
+  get accent() { return getColorFn("accent"); },
+  get muted() { return getColorFn("muted"); },
+  get warning() { return getColorFn("warning"); },
+} as const;
 
 export function createSuggestCommand(): Command {
   const suggest = new Command("suggest")

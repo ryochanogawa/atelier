@@ -5,7 +5,12 @@
  */
 
 import { Command } from "commander";
-import { COLORS } from "../theme.js";
+import { getColorFn } from "../output.js";
+
+const COLORS = {
+  get accent() { return getColorFn("accent"); },
+  get muted() { return getColorFn("muted"); },
+} as const;
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { TaskStoreAdapter } from "../../adapters/config/task-store.adapter.js";

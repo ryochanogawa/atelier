@@ -17,7 +17,15 @@
 import { Command } from "commander";
 import readline from "node:readline";
 import path from "node:path";
-import { COLORS } from "../theme.js";
+import { getColorFn, printSuccess, printError, printWarning, printInfo, printTable, printRunResult, createSpinner } from "../output.js";
+
+const COLORS = {
+  get accent() { return getColorFn("accent"); },
+  get muted() { return getColorFn("muted"); },
+  get success() { return getColorFn("success"); },
+  get error() { return getColorFn("error"); },
+  get warning() { return getColorFn("warning"); },
+} as const;
 import { parse as parseYaml } from "yaml";
 import { InteractiveSessionUseCase } from "../../application/use-cases/interactive-session.use-case.js";
 import { ClaudeCodeAdapter } from "../../adapters/medium/claude-code.adapter.js";
@@ -30,7 +38,6 @@ import { writeTextFile, readTextFile, listFiles, listDirs, ensureDir } from "../
 import { CommissionRunUseCase } from "../../application/use-cases/run-commission.use-case.js";
 import { listBuiltinCommissions } from "../../builtin/index.js";
 import { createEventBus } from "../../infrastructure/event-bus/event-emitter.js";
-import { printSuccess, printError, printWarning, printInfo, printTable, printRunResult, createSpinner } from "../output.js";
 
 // ── helpers ──────────────────────────────────────────────
 

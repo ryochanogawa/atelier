@@ -1,71 +1,78 @@
 import { describe, it, expect } from "vitest";
-import { COLORS, SYMBOLS, BORDERS, TABLE_STYLE } from "../../../src/cli/theme.js";
+import { BIOHAZARD_THEME } from "../../../src/adapters/theme/biohazard.adapter.js";
+import { ThemePortSchema } from "../../../src/adapters/theme/theme.schema.js";
 
-describe("theme.ts", () => {
-  describe("COLORS", () => {
-    it("全カラーキーがエクスポートされている", () => {
+describe("BIOHAZARD_THEME (ThemePort Adapter)", () => {
+  describe("meta", () => {
+    it("name が 'biohazard'", () => {
+      expect(BIOHAZARD_THEME.meta.name).toBe("biohazard");
+    });
+
+    it("displayName が定義されている", () => {
+      expect(BIOHAZARD_THEME.meta.displayName).toBe("Biohazard");
+    });
+
+    it("version が semver 形式", () => {
+      expect(BIOHAZARD_THEME.meta.version).toMatch(/^\d+\.\d+\.\d+$/);
+    });
+  });
+
+  describe("colors", () => {
+    it("全カラーキーが hex 文字列で定義されている", () => {
       const expectedKeys = [
         "primary", "secondary", "accent", "muted", "text",
         "success", "error", "warning", "info",
-      ];
+      ] as const;
       for (const key of expectedKeys) {
-        expect(COLORS).toHaveProperty(key);
+        expect(BIOHAZARD_THEME.colors[key]).toMatch(/^#[0-9A-Fa-f]{6}$/);
       }
     });
 
-    it("各カラーは関数として呼び出し可能", () => {
-      for (const [key, colorFn] of Object.entries(COLORS)) {
-        expect(typeof colorFn).toBe("function");
-        const result = colorFn("test");
-        expect(typeof result).toBe("string");
-      }
+    it("primary は #CC0000", () => {
+      expect(BIOHAZARD_THEME.colors.primary).toBe("#CC0000");
     });
   });
 
-  describe("SYMBOLS", () => {
-    it("全シンボルキーがエクスポートされている", () => {
+  describe("symbols", () => {
+    it("全シンボルキーが文字列で定義されている", () => {
       const expectedKeys = [
-        "biohazard", "success", "error", "warning", "info",
+        "brand", "success", "error", "warning", "info",
         "bullet", "arrow", "line",
-      ];
+      ] as const;
       for (const key of expectedKeys) {
-        expect(SYMBOLS).toHaveProperty(key);
-        expect(typeof SYMBOLS[key as keyof typeof SYMBOLS]).toBe("string");
+        expect(typeof BIOHAZARD_THEME.symbols[key]).toBe("string");
+        expect(BIOHAZARD_THEME.symbols[key].length).toBeGreaterThan(0);
       }
     });
 
-    it("biohazard シンボルは ☣", () => {
-      expect(SYMBOLS.biohazard).toBe("\u2623");
-    });
-
-    it("success シンボルは ☣ (テーマ統一)", () => {
-      expect(SYMBOLS.success).toBe("\u2623");
+    it("brand シンボルは ☣", () => {
+      expect(BIOHAZARD_THEME.symbols.brand).toBe("\u2623");
     });
   });
 
-  describe("BORDERS", () => {
-    it("全ボーダーキーがエクスポートされている", () => {
+  describe("borders", () => {
+    it("全ボーダーキーが定義されている", () => {
       const expectedKeys = [
         "topLeft", "topRight", "bottomLeft", "bottomRight",
         "horizontal", "vertical", "titleLeft", "titleRight",
-      ];
+      ] as const;
       for (const key of expectedKeys) {
-        expect(BORDERS).toHaveProperty(key);
-        expect(typeof BORDERS[key as keyof typeof BORDERS]).toBe("string");
+        expect(typeof BIOHAZARD_THEME.borders[key]).toBe("string");
+        expect(BIOHAZARD_THEME.borders[key].length).toBeGreaterThan(0);
       }
     });
 
     it("box-drawing 文字を使用している", () => {
-      expect(BORDERS.topLeft).toBe("\u2554");
-      expect(BORDERS.topRight).toBe("\u2557");
-      expect(BORDERS.bottomLeft).toBe("\u255A");
-      expect(BORDERS.bottomRight).toBe("\u255D");
-      expect(BORDERS.horizontal).toBe("\u2550");
-      expect(BORDERS.vertical).toBe("\u2551");
+      expect(BIOHAZARD_THEME.borders.topLeft).toBe("\u2554");
+      expect(BIOHAZARD_THEME.borders.topRight).toBe("\u2557");
+      expect(BIOHAZARD_THEME.borders.bottomLeft).toBe("\u255A");
+      expect(BIOHAZARD_THEME.borders.bottomRight).toBe("\u255D");
+      expect(BIOHAZARD_THEME.borders.horizontal).toBe("\u2550");
+      expect(BIOHAZARD_THEME.borders.vertical).toBe("\u2551");
     });
   });
 
-  describe("TABLE_STYLE", () => {
+  describe("tableStyle", () => {
     it("cli-table3 互換のキーが全て含まれている", () => {
       const expectedKeys = [
         "top", "top-mid", "top-left", "top-right",
@@ -74,9 +81,31 @@ describe("theme.ts", () => {
         "right", "right-mid", "middle",
       ];
       for (const key of expectedKeys) {
-        expect(TABLE_STYLE).toHaveProperty(key);
-        expect(typeof TABLE_STYLE[key]).toBe("string");
+        expect(BIOHAZARD_THEME.tableStyle).toHaveProperty(key);
+        expect(typeof BIOHAZARD_THEME.tableStyle[key]).toBe("string");
       }
+    });
+  });
+
+  describe("ThemePortSchema バリデーション", () => {
+    it("BIOHAZARD_THEME が Zod スキーマに適合する", () => {
+      const result = ThemePortSchema.safeParse(BIOHAZARD_THEME);
+      expect(result.success).toBe(true);
+    });
+
+    it("不完全なテーマはバリデーション失敗する", () => {
+      const incomplete = { meta: { name: "bad" } };
+      const result = ThemePortSchema.safeParse(incomplete);
+      expect(result.success).toBe(false);
+    });
+
+    it("colors が空文字列だとバリデーション失敗する", () => {
+      const bad = {
+        ...BIOHAZARD_THEME,
+        colors: { ...BIOHAZARD_THEME.colors, primary: "" },
+      };
+      const result = ThemePortSchema.safeParse(bad);
+      expect(result.success).toBe(false);
     });
   });
 });

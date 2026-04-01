@@ -4,7 +4,16 @@
  */
 
 import { Command } from "commander";
-import { COLORS } from "../theme.js";
+import { getColorFn } from "../output.js";
+
+const COLORS = {
+  get accent() { return getColorFn("accent"); },
+  get muted() { return getColorFn("muted"); },
+  get success() { return getColorFn("success"); },
+  get info() { return getColorFn("info"); },
+  get warning() { return getColorFn("warning"); },
+  get text() { return getColorFn("text"); },
+} as const;
 import path from "node:path";
 import fs from "node:fs/promises";
 import readline from "node:readline";

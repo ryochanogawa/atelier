@@ -25,20 +25,56 @@ import { createRunCommand } from "./commands/run.cmd.js";
 import { createCatalogCommand } from "./commands/catalog.cmd.js";
 import { createWatchCommand } from "./commands/watch.cmd.js";
 import { createSpecCommand } from "./commands/spec.cmd.js";
-import { setOutputFormat, printHeader } from "./output.js";
+import {
+  setOutputFormat,
+  printHeader,
+  initializeTheme,
+  resolveRenderMode,
+  initializeRenderMode,
+} from "./output.js";
+import { ThemeResolverService } from "../application/services/theme-resolver.service.js";
+import { ConsoleLoggerAdapter } from "../adapters/logger/console-logger.adapter.js";
+import { resolveAtelierPath } from "../shared/utils.js";
+import { STUDIO_CONFIG_FILE } from "../shared/constants.js";
+import { readTextFile } from "../infrastructure/fs/file-system.js";
+import { parse as parseYaml } from "yaml";
 
 const program = new Command();
+
+async function resolveTheme(): Promise<void> {
+  try {
+    const projectPath = process.cwd();
+    const configPath = `${resolveAtelierPath(projectPath)}/${STUDIO_CONFIG_FILE}`;
+    const raw = await readTextFile(configPath);
+    const config = parseYaml(raw) as Record<string, unknown>;
+    if (typeof config.theme === "string" && config.theme.length > 0) {
+      const logger = new ConsoleLoggerAdapter();
+      const resolver = new ThemeResolverService();
+      const theme = await resolver.resolve(config.theme, logger);
+      initializeTheme(theme);
+    }
+  } catch {
+    // studio.yaml が無い場合やパースエラー時はデフォルトテーマのまま
+  }
+}
 
 program
   .name(CLI_NAME)
   .description("ATELIER - AI Agent Orchestration CLI")
   .version(CLI_VERSION)
   .option("--json", "JSON 形式で出力", false)
-  .hook("preAction", (_thisCommand, actionCommand) => {
-    const opts = program.opts();
+  .option("--no-tui", "Ink TUI を無効化し従来のテキスト出力を使用")
+  .hook("preAction", async (_thisCommand, _actionCommand) => {
+    const opts = program.opts<{ json: boolean; tui: boolean }>();
     if (opts.json) {
       setOutputFormat("json");
     }
+    const mode = resolveRenderMode({
+      json: opts.json,
+      noTui: !opts.tui,
+    });
+    await initializeRenderMode(mode);
+    await resolveTheme();
     printHeader(`${CLI_NAME.toUpperCase()} v${CLI_VERSION}`);
   });
 

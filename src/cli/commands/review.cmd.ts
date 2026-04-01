@@ -19,8 +19,16 @@ import {
   printInfo,
   getOutputFormat,
   createSpinner,
+  getColorFn,
 } from "../output.js";
-import { COLORS } from "../theme.js";
+
+const COLORS = {
+  get accent() { return getColorFn("accent"); },
+  get muted() { return getColorFn("muted"); },
+  get success() { return getColorFn("success"); },
+  get error() { return getColorFn("error"); },
+  get warning() { return getColorFn("warning"); },
+} as const;
 
 /**
  * git diff を取得する。

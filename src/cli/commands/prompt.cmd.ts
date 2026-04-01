@@ -4,7 +4,17 @@
  */
 
 import { Command } from "commander";
-import { COLORS } from "../theme.js";
+import { getColorFn, printError } from "../output.js";
+
+const COLORS = {
+  get accent() { return getColorFn("accent"); },
+  get muted() { return getColorFn("muted"); },
+  get info() { return getColorFn("info"); },
+  get success() { return getColorFn("success"); },
+  get text() { return getColorFn("text"); },
+  get warning() { return getColorFn("warning"); },
+  get error() { return getColorFn("error"); },
+} as const;
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { Stroke } from "../../domain/models/stroke.model.js";
@@ -27,7 +37,6 @@ import {
   getBuiltinInstructionPath,
   getBuiltinKnowledgePath,
 } from "../../builtin/index.js";
-import { printError } from "../output.js";
 
 /* ------------------------------------------------------------------ */
 /*  Palette / Policy / Contract / Knowledge / Instruction ローダー     */

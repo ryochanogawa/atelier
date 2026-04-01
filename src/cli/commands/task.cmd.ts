@@ -13,8 +13,15 @@ import {
   printWarning,
   printInfo,
   createSpinner,
+  getColorFn,
 } from "../output.js";
-import { COLORS } from "../theme.js";
+
+const COLORS = {
+  get success() { return getColorFn("success"); },
+  get error() { return getColorFn("error"); },
+  get warning() { return getColorFn("warning"); },
+  get text() { return getColorFn("text"); },
+} as const;
 import type { ConfigPort, VcsPort, LoggerPort } from "../../application/use-cases/run-commission.use-case.js";
 import type { MediumRegistry } from "../../application/services/commission-runner.service.js";
 import type { StudioConfig, MediumConfig } from "../../shared/types.js";

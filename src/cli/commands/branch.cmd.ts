@@ -5,7 +5,13 @@
  */
 
 import { Command } from "commander";
-import { COLORS } from "../theme.js";
+import { getColorFn } from "../output.js";
+
+const COLORS = {
+  get accent() { return getColorFn("accent"); },
+  get muted() { return getColorFn("muted"); },
+  get success() { return getColorFn("success"); },
+} as const;
 import readline from "node:readline";
 import path from "node:path";
 import { simpleGit } from "simple-git";
