@@ -7,5 +7,7 @@ strokes:
     instruction: spec-requirements
     contract: spec-requirements-output
     allow_edit: true
+    inputs:
+      - requirements
     outputs:
       - requirements

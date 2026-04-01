@@ -1,11 +1,25 @@
 name: spec-design-output
-description: 技術設計書。要件との対応を明示。
+description: 技術設計書。要件との対応・UseCase分析・データモデルを含む包括的な設計ドキュメント。
 
 format: |
   # 技術設計: {機能名}
 
-  ## 方針
-  （1-2文で要約）
+  ## 概要
+  （1-2文で設計方針を要約）
+
+  ## 画面操作フローとUseCase分析
+
+  ```
+  [画面/トリガー] → [操作] → [結果]
+  ```
+
+  - UseCase名: {UseCase名}
+    - アクター: {誰が}
+    - トリガー: {何をきっかけに}
+    - 主要フロー:
+      1. ...
+    - 代替/例外フロー:
+      - ...
 
   ## 要件→設計マッピング
 
@@ -24,14 +38,28 @@ format: |
   | ファイル | 変更内容 | 新規/修正 |
   |---------|---------|----------|
 
+  ## データモデル
+
+  | テーブル | カラム | 型 | 変更内容 | 新規/修正 |
+  |---------|--------|-----|---------|----------|
+
   ## データの流れ
+
+  ```mermaid
+  sequenceDiagram
+      ...
+  ```
 
   ## エラー時の動作
 
-  | エラー | 対処 |
-  |--------|------|
+  | エラー | 検知箇所 | 対処 |
+  |--------|---------|------|
+
+  ## セキュリティ考慮事項
+  - {入力バリデーション、認可チェック、SQLインジェクション対策等}
 
   ## テスト方針
+  - {テスト対象、テスト種別、重点確認項目}
 
 fields:
   - name: feature_name
@@ -39,7 +67,22 @@ fields:
     required: true
     description: 機能名
 
+  - name: use_cases
+    type: array
+    required: true
+    description: UseCase分析（アクター、トリガー、フロー）
+
   - name: mapping
     type: array
     required: true
     description: 要件→設計マッピング
+
+  - name: data_model
+    type: array
+    required: false
+    description: データモデル変更（テーブル・カラム）
+
+  - name: security
+    type: array
+    required: false
+    description: セキュリティ考慮事項

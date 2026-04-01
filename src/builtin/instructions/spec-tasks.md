@@ -18,4 +18,4 @@
 - 各タスク末尾に `_要件: N_` と `_依存: N_` を付ける
 
 ## 保存
-生成した実装タスクを `.atelier/specs/{{spec_dir}}/tasks.md` に保存してください。
+生成した実装タスクを `{{project_path}}/.atelier/specs/{{spec_dir}}/tasks.md` に保存してください。

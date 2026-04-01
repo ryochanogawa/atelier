@@ -1498,6 +1498,7 @@ export class CommissionRunnerService {
       max_iterations: this._maxIterations,
       stroke_iteration: String(this._strokeIteration),
       report_dir: this._reportDir,
+      project_path: this.deps.projectPath,
     };
 
     return template.replace(/\{\{(\w+)\}\}/g, (_match: string, key: string) => {

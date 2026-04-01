@@ -1,5 +1,8 @@
 コードベースを分析し、ユーザーのタスク説明から要件定義書を作成してください。
 
+## タスク説明
+{{requirements}}
+
 ## 手順
 1. コードベースの関連ファイルを読み取り、現状を把握する
 2. タスク説明から機能要件を抽出する
@@ -14,4 +17,4 @@
 - Could: あれば便利
 
 ## 保存
-生成した要件定義書を `.atelier/specs/{{spec_dir}}/requirements.md` に保存してください。
+生成した要件定義書を `{{project_path}}/.atelier/specs/{{spec_dir}}/requirements.md` に保存してください。
