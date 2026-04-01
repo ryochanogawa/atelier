@@ -6,10 +6,12 @@
 import type { ThemePort } from "../../domain/ports/theme.port.js";
 import type { LoggerPort } from "../../domain/ports/logger.port.js";
 import { BIOHAZARD_THEME } from "../../adapters/theme/biohazard.adapter.js";
+import { CODEC_THEME } from "../../adapters/theme/codec.adapter.js";
 import { loadNpmTheme } from "../../adapters/theme/theme-loader.adapter.js";
 
 const BUILTIN_THEMES: ReadonlyMap<string, ThemePort> = new Map([
   ["biohazard", BIOHAZARD_THEME],
+  ["codec", CODEC_THEME],
 ]);
 
 export class ThemeResolverService {

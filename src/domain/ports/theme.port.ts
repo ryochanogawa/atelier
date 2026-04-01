@@ -55,6 +55,100 @@ export interface ThemeMeta {
   readonly description?: string;
 }
 
+// ─── Layout ────────────────────────────────────────────
+
+/** レイアウトプリセット名 */
+export type ThemeLayoutPreset = "standard" | "codec" | "custom";
+
+/** ASCII アートアセット定義 */
+export interface ThemeAsciiAsset {
+  /** 行ごとの文字列配列 */
+  readonly lines: readonly string[];
+  /** 幅(列数) */
+  readonly width: number;
+  /** 高さ(行数) */
+  readonly height: number;
+}
+
+/** 通信画面のヘッダー設定 */
+export interface ThemeLayoutHeader {
+  /** ヘッダーに表示するラベル（例: "CODEC 141.80"） */
+  readonly label: string;
+  /** 周波数・チャンネル表示（オプション） */
+  readonly frequency?: string;
+}
+
+/** パネル（通信者）定義 */
+export interface ThemeLayoutPanel {
+  /** パネル名 */
+  readonly name: string;
+  /** ASCII アートアバター（オプション） */
+  readonly avatar?: ThemeAsciiAsset;
+}
+
+/** レイアウト定義 */
+export interface ThemeLayout {
+  /** プリセット名: 描画エンジンがこの値で分岐する */
+  readonly preset: ThemeLayoutPreset;
+  /** 通信画面ヘッダー（codec 等で使用） */
+  readonly header?: ThemeLayoutHeader;
+  /** 左パネル（ユーザー側） */
+  readonly userPanel?: ThemeLayoutPanel;
+  /** 右パネル（AI 側） */
+  readonly assistantPanel?: ThemeLayoutPanel;
+}
+
+// ─── Animations ────────────────────────────────────────
+
+/** イージング関数名 */
+export type ThemeEasing = "linear" | "ease-in" | "ease-out" | "step";
+
+/** 単一アニメーション定義 */
+export interface ThemeAnimationDef {
+  /** アニメーションを有効にするか */
+  readonly enabled: boolean;
+  /** 持続時間 (ms) */
+  readonly durationMs: number;
+  /** イージング */
+  readonly easing: ThemeEasing;
+}
+
+/** テーマが提供するアニメーション群 */
+export interface ThemeAnimations {
+  /** タイプライター効果（1 文字ずつ表示） */
+  readonly typewriter?: ThemeAnimationDef;
+  /** 通信開始トランジション */
+  readonly transitionIn?: ThemeAnimationDef;
+  /** 通信終了トランジション */
+  readonly transitionOut?: ThemeAnimationDef;
+  /** スキャンライン / ノイズ効果 */
+  readonly scanline?: ThemeAnimationDef;
+}
+
+// ─── Sound ─────────────────────────────────────────────
+
+/** サウンドイベント定義 */
+export interface ThemeSoundDef {
+  /** サウンドを有効にするか */
+  readonly enabled: boolean;
+  /** BEL 文字を鳴らすか、または外部ファイルパス */
+  readonly type: "bel" | "file";
+  /** type が "file" の場合のファイルパス（テーマパッケージ相対） */
+  readonly path?: string;
+}
+
+/** テーマが提供するサウンド群 */
+export interface ThemeSounds {
+  /** 通信開始音 */
+  readonly connect?: ThemeSoundDef;
+  /** 通信終了音 */
+  readonly disconnect?: ThemeSoundDef;
+  /** メッセージ受信音 */
+  readonly messageReceive?: ThemeSoundDef;
+}
+
+// ─── ThemePort ─────────────────────────────────────────
+
 /** ThemePort: テーマ全体のインターフェース */
 export interface ThemePort {
   readonly meta: ThemeMeta;
@@ -62,4 +156,11 @@ export interface ThemePort {
   readonly symbols: ThemeSymbols;
   readonly borders: ThemeBorders;
   readonly tableStyle: ThemeTableStyle;
+
+  /** レイアウト定義（省略時は standard） */
+  readonly layout?: ThemeLayout;
+  /** アニメーション定義（省略時はアニメーションなし） */
+  readonly animations?: ThemeAnimations;
+  /** サウンド定義（省略時はサウンドなし） */
+  readonly sounds?: ThemeSounds;
 }

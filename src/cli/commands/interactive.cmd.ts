@@ -17,7 +17,8 @@
 import { Command } from "commander";
 import readline from "node:readline";
 import path from "node:path";
-import { getColorFn, printSuccess, printError, printWarning, printInfo, printTable, printRunResult, createSpinner } from "../output.js";
+import { getColorFn, printSuccess, printError, printWarning, printInfo, printTable, printRunResult, createSpinner, getCurrentTheme, isTuiMode } from "../output.js";
+import { transitionIn, transitionOut, typewrite, scanlineFlash, playSound } from "../codec-effects.js";
 
 const COLORS = {
   get accent() { return getColorFn("accent"); },
@@ -1238,32 +1239,188 @@ function printCommandHelp(): void {
 
 // ── メインループ ──────────────────────────────────────────
 
+/** テーマが CODEC レイアウトかどうか */
+function isCodecLayout(): boolean {
+  const theme = getCurrentTheme();
+  return theme.layout?.preset === "codec" && isTuiMode();
+}
+
+/** CODEC 風の開始画面を表示 */
+async function showCodecOpening(): Promise<void> {
+  const theme = getCurrentTheme();
+  const { colors, borders, layout, symbols } = theme;
+  const chalk = (await import("chalk")).default;
+
+  const c = {
+    primary: chalk.hex(colors.primary),
+    accent: chalk.hex(colors.accent),
+    muted: chalk.hex(colors.muted),
+    text: chalk.hex(colors.text),
+    secondary: chalk.hex(colors.secondary).bgHex(colors.secondary),
+  };
+
+  // 着信音 & トランジション
+  await transitionIn(theme);
+  playSound(theme.sounds?.connect);
+
+  const innerW = Math.min((process.stdout.columns ?? 80) - 4, 60);
+  const hBar = borders.horizontal.repeat(innerW);
+
+  // ═══ CODEC ヘッダー ═══
+  const label = layout?.header?.label ?? "CODEC";
+  const freq = layout?.header?.frequency ?? "141.12";
+  console.log(c.primary(`${borders.topLeft}${hBar}${borders.topRight}`));
+  // 左: CALL / 中央: CODEC / 右: 周波数
+  const callTag = `${symbols.brand} CALL`;
+  const freqTag = freq;
+  const centerSpace = Math.max(0, innerW - callTag.length - label.length - freqTag.length - 4);
+  const leftPad = Math.floor(centerSpace / 2);
+  const rightPad = centerSpace - leftPad;
+  console.log(
+    c.primary(borders.vertical)
+    + c.accent(` ${callTag}`)
+    + " ".repeat(leftPad)
+    + c.primary.bold(` ${label} `)
+    + " ".repeat(rightPad)
+    + c.accent(`${freqTag} `)
+    + c.primary(borders.vertical),
+  );
+  console.log(c.primary(`${borders.bottomLeft}${hBar}${borders.bottomRight}`));
+  console.log();
+
+  // ═══ ポートレートパネル ═══
+  const userPanel = layout?.userPanel;
+  const aiPanel = layout?.assistantPanel;
+  if (userPanel?.avatar && aiPanel?.avatar) {
+    const gap = Math.max(4, innerW - (userPanel.avatar.width + aiPanel.avatar.width));
+    const maxLines = Math.max(userPanel.avatar.height, aiPanel.avatar.height);
+    for (let i = 0; i < maxLines; i++) {
+      const left = userPanel.avatar.lines[i] ?? " ".repeat(userPanel.avatar.width);
+      const right = aiPanel.avatar.lines[i] ?? " ".repeat(aiPanel.avatar.width);
+      console.log(c.accent(left) + " ".repeat(gap) + c.primary(right));
+    }
+
+    // 名前ラベル（ポートレート下、中央揃え）
+    const leftName = userPanel.name.padStart(
+      Math.floor((userPanel.avatar.width + userPanel.name.length) / 2),
+    ).padEnd(userPanel.avatar.width);
+    const rightName = aiPanel.name.padStart(
+      Math.floor((aiPanel.avatar.width + aiPanel.name.length) / 2),
+    ).padEnd(aiPanel.avatar.width);
+    console.log(c.accent.bold(leftName) + " ".repeat(gap) + c.primary.bold(rightName));
+    console.log();
+  }
+
+  // ═══ ステータスバー ═══
+  const sigLabel = " SIGNAL ACTIVE ";
+  const helpLabel = " /help ";
+  const dotCount = Math.max(0, innerW - sigLabel.length - helpLabel.length - 6);
+  const dots = "·".repeat(dotCount);
+  console.log(c.muted(`───${sigLabel}${dots}${helpLabel}───`));
+  console.log();
+}
+
+/** CODEC 風の終了画面を表示 */
+async function showCodecClosing(): Promise<void> {
+  const theme = getCurrentTheme();
+  const chalk = (await import("chalk")).default;
+  const primary = chalk.hex(theme.colors.primary);
+  const muted = chalk.hex(theme.colors.muted);
+
+  playSound(theme.sounds?.disconnect);
+  await transitionOut(theme);
+
+  const innerW = Math.min((process.stdout.columns ?? 80) - 4, 60);
+  const endMsg = " TRANSMISSION ENDED ";
+  const padTotal = Math.max(0, innerW - endMsg.length);
+  const lPad = Math.floor(padTotal / 2);
+  const rPad = padTotal - lPad;
+  console.log(muted("─".repeat(lPad)) + primary.bold(endMsg) + muted("─".repeat(rPad)));
+}
+
+/** CODEC 風にユーザーメッセージを表示 */
+async function showCodecUserMessage(text: string): Promise<void> {
+  const theme = getCurrentTheme();
+  const chalk = (await import("chalk")).default;
+  const { colors } = theme;
+  const userName = theme.layout?.userPanel?.name ?? "SNAKE";
+
+  const innerW = Math.min((process.stdout.columns ?? 80) - 2, 60);
+  console.log(chalk.hex(colors.muted)("─".repeat(innerW)));
+  console.log(chalk.hex(colors.accent).bold(`${userName}:`));
+  console.log(chalk.hex(colors.text)(`  "${text}"`));
+}
+
+/** CODEC 風に AI レスポンスを表示（タイプライター） */
+async function showCodecAiResponse(text: string): Promise<void> {
+  const theme = getCurrentTheme();
+  const chalk = (await import("chalk")).default;
+  const { colors } = theme;
+  const aiName = theme.layout?.assistantPanel?.name ?? "ATELIER";
+
+  await scanlineFlash(theme);
+  playSound(theme.sounds?.messageReceive);
+
+  console.log(chalk.hex(colors.primary).bold(`${aiName}:`));
+
+  // タイプライター効果で出力（raw stdout なので ANSI カラーコードを直接使用）
+  const open = `\x1b[38;2;${hexToRgb(colors.text)}m`;
+  const close = "\x1b[0m";
+
+  process.stdout.write(open + "  ");
+  await typewrite(text, theme.animations?.typewriter);
+  process.stdout.write(close + "\n");
+
+  const innerW = Math.min((process.stdout.columns ?? 80) - 2, 60);
+  console.log(chalk.hex(colors.muted)("─".repeat(innerW)));
+}
+
+/** hex カラーを "r;g;b" 形式に変換 */
+function hexToRgb(hex: string): string {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `${r};${g};${b}`;
+}
+
 async function startInteractiveLoop(
   session: InteractiveSessionUseCase,
 ): Promise<void> {
   // stdinが閉じないようにrefを保持
   process.stdin.ref();
 
-  console.log();
-  console.log(COLORS.accent.bold("ATELIER Interactive Mode"));
-  console.log(COLORS.muted("─".repeat(50)));
-  console.log(COLORS.muted("対話モードを開始しました。AIに質問や指示を入力してください。"));
-  console.log(COLORS.muted("コマンド一覧: /help"));
-  console.log(COLORS.muted("主要コマンド:"));
-  console.log(COLORS.muted("  /go [追加指示]  - 対話を要約 → Commission 選択 → 実行"));
-  console.log(COLORS.muted("  /play <タスク>  - 即座にタスク実行"));
-  console.log(COLORS.muted("  /spec           - 仕様書3点セット生成"));
-  console.log(COLORS.muted("  /resume         - 過去のセッションを復元"));
-  console.log(COLORS.muted("  /exit           - 終了（アクション選択あり）"));
-  console.log(COLORS.muted("─".repeat(50)));
-  console.log();
+  const codec = isCodecLayout();
+
+  if (codec) {
+    // ── CODEC 通信画面 ──
+    await showCodecOpening();
+  } else {
+    // ── 従来モード ──
+    console.log();
+    console.log(COLORS.accent.bold("ATELIER Interactive Mode"));
+    console.log(COLORS.muted("─".repeat(50)));
+    console.log(COLORS.muted("対話モードを開始しました。AIに質問や指示を入力してください。"));
+    console.log(COLORS.muted("コマンド一覧: /help"));
+    console.log(COLORS.muted("主要コマンド:"));
+    console.log(COLORS.muted("  /go [追加指示]  - 対話を要約 → Commission 選択 → 実行"));
+    console.log(COLORS.muted("  /play <タスク>  - 即座にタスク実行"));
+    console.log(COLORS.muted("  /spec           - 仕様書3点セット生成"));
+    console.log(COLORS.muted("  /resume         - 過去のセッションを復元"));
+    console.log(COLORS.muted("  /exit           - 終了（アクション選択あり）"));
+    console.log(COLORS.muted("─".repeat(50)));
+    console.log();
+  }
 
   let running = true;
 
   while (running) {
     let input: string;
     try {
-      input = await promptLine(COLORS.accent("you > "));
+      const promptText = codec
+        ? COLORS.accent(`${getCurrentTheme().layout?.userPanel?.name ?? "SNAKE"} > `)
+        : COLORS.accent("you > ");
+      input = await promptLine(promptText);
     } catch {
       // stdinが閉じた場合は終了
       break;
@@ -1282,24 +1439,48 @@ async function startInteractiveLoop(
       if (handled) continue;
     }
 
-    // 通常のメッセージをAIに送信
-    const spinner = createSpinner("考え中...").start();
-    try {
-      const response = await session.sendMessage(trimmed);
-      spinner.stop();
-      console.log();
-      console.log(COLORS.success("ai > ") + response);
-      console.log();
-    } catch (error) {
-      spinner.fail("応答の取得に失敗しました");
-      printError(
-        error instanceof Error ? error.message : String(error),
-      );
-      console.log();
+    if (codec) {
+      // ── CODEC 描画 ──
+      await showCodecUserMessage(trimmed);
+
+      const spinner = createSpinner("受信中...").start();
+      try {
+        const response = await session.sendMessage(trimmed);
+        spinner.stop();
+        console.log();
+        await showCodecAiResponse(response);
+        console.log();
+      } catch (error) {
+        spinner.fail("通信エラー");
+        printError(
+          error instanceof Error ? error.message : String(error),
+        );
+        console.log();
+      }
+    } else {
+      // ── 従来描画 ──
+      const spinner = createSpinner("考え中...").start();
+      try {
+        const response = await session.sendMessage(trimmed);
+        spinner.stop();
+        console.log();
+        console.log(COLORS.success("ai > ") + response);
+        console.log();
+      } catch (error) {
+        spinner.fail("応答の取得に失敗しました");
+        printError(
+          error instanceof Error ? error.message : String(error),
+        );
+        console.log();
+      }
     }
   }
 
-  console.log(COLORS.muted("対話モードを終了しました。"));
+  if (codec) {
+    await showCodecClosing();
+  } else {
+    console.log(COLORS.muted("対話モードを終了しました。"));
+  }
 }
 
 // ── コマンド定義 ──────────────────────────────────────────
