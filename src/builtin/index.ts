@@ -20,7 +20,11 @@ const BUILTIN_COMMISSIONS = [
   "legacy-analysis",
   "requirements-analysis",
   "review-gate",
+  "spec-design",
   "spec-driven",
+  "spec-plan",
+  "spec-requirements",
+  "spec-tasks",
   "test-enhancement",
 ] as const;
 const BUILTIN_PALETTES = [
