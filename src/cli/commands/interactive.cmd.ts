@@ -171,10 +171,22 @@ async function buildCommissionInfra(projectPath: string) {
       const content = await readText(path.join(resolveAtelierPath(pp), STUDIO_CONFIG_FILE));
       const parsed = parseYaml(content) as Record<string, unknown>;
       const studio = parsed.studio as Record<string, unknown>;
+
+      // palette_providers の読み込み
+      const rawPaletteProviders = (parsed.palette_providers ?? {}) as Record<string, Record<string, unknown>>;
+      const paletteProviders: Record<string, { medium?: string; model?: string }> = {};
+      for (const [name, config] of Object.entries(rawPaletteProviders)) {
+        paletteProviders[name] = {
+          medium: config.medium as string | undefined,
+          model: config.model as string | undefined,
+        };
+      }
+
       return {
         defaultMedium: (studio?.default_medium as string) ?? "claude-code",
         language: (studio?.language as string) ?? "ja",
         logLevel: (studio?.log_level as "info") ?? "info",
+        ...(Object.keys(paletteProviders).length > 0 ? { paletteProviders } : {}),
       };
     },
     async loadMediaConfig(pp: string) {
@@ -244,6 +256,38 @@ async function buildCommissionInfra(projectPath: string) {
   };
 
   return { configPort, mediumRegistry, vcsPort, loggerPort };
+}
+
+/** Spec用 Commission を実行する（worktree なし、spec_dir を canvas に渡す） */
+async function executeSpecCommission(
+  projectPath: string,
+  commissionName: string,
+  description: string,
+  specDirName: string,
+): Promise<void> {
+  const { configPort, mediumRegistry, loggerPort } = await buildCommissionInfra(projectPath);
+  const noopVcsPort = {
+    async createWorktree(basePath: string, _branchName: string) { return basePath; },
+    async removeWorktree(_w: string) {},
+    async commitAll(_cwd: string, _message: string) {},
+  };
+  const eventBus = createEventBus();
+  const useCase = new CommissionRunUseCase(configPort, noopVcsPort, loggerPort, mediumRegistry, eventBus);
+
+  const execSpinner = createSpinner(`Commission '${commissionName}' を実行中...`).start();
+
+  try {
+    const result = await useCase.execute(commissionName, projectPath, {
+      dryRun: false,
+      initialCanvas: { requirements: description, spec_dir: specDirName },
+    });
+
+    execSpinner.stop();
+    printRunResult(result);
+  } catch (error) {
+    execSpinner.fail(`Commission '${commissionName}' の実行に失敗しました`);
+    printError(error instanceof Error ? error.message : String(error));
+  }
 }
 
 /** Commission を実行して結果を表示する */
@@ -893,10 +937,11 @@ async function handleSpec(
   }
 
   // Step 3: spec-plan Commission で requirements → design → tasks を実行（実装は含まない）
+  // 仕様書生成はworktree不要 — プロジェクト直下の .atelier/specs/ に直接書き出す
   printInfo("spec-plan Commission を実行中 (requirements → design → tasks)...");
   console.log();
 
-  await executeCommission(projectPath, "spec-plan", description);
+  await executeSpecCommission(projectPath, "spec-plan", description, specDirName);
 
   printSuccess(`✓ 仕様書を生成しました: .atelier/specs/${specDirName}/`);
   console.log();
@@ -964,13 +1009,22 @@ async function handleSpecImplement(
     return;
   }
 
-  // Step 3: spec-driven Commission で全6ストローク実行（requirements → design → tasks → implement → test → review）
-  printInfo("spec-driven Commission を実行中 (requirements → design → tasks → implement → test → review)...");
+  // Step 3: spec-plan で仕様書3点セット生成（worktree なし）
+  printInfo("spec-plan Commission を実行中 (requirements → design → tasks)...");
   console.log();
 
-  await executeCommission(projectPath, "spec-driven", description);
+  await executeSpecCommission(projectPath, "spec-plan", description, specDirName);
 
-  printSuccess(`✓ 仕様書を生成し実装が完了しました: .atelier/specs/${specDirName}/`);
+  printSuccess(`✓ 仕様書を生成しました: .atelier/specs/${specDirName}/`);
+  console.log();
+
+  // Step 4: default Commission で実装（worktree あり）
+  printInfo("default Commission を実行中 (plan → implement → review)...");
+  console.log();
+
+  await executeCommission(projectPath, "default", description);
+
+  printSuccess(`✓ 実装が完了しました`);
   console.log();
 }
 
