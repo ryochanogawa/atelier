@@ -16,7 +16,7 @@ import type { ConfigPort, VcsPort, LoggerPort } from "../../application/use-case
 import type { MediumRegistry } from "../../application/services/commission-runner.service.js";
 import type { StudioConfig, MediumConfig, PaletteProviderConfig, NotificationConfig, RuntimeConfig } from "../../shared/types.js";
 import { createEventBus } from "../../infrastructure/event-bus/event-emitter.js";
-import { readTextFile } from "../../infrastructure/fs/file-system.js";
+import { readTextFile, fileExists } from "../../infrastructure/fs/file-system.js";
 import { resolveAtelierPath, generateRunId } from "../../shared/utils.js";
 import { STUDIO_CONFIG_FILE } from "../../shared/constants.js";
 import {
@@ -37,6 +37,14 @@ function createConfigPort(): ConfigPort {
         resolveAtelierPath(projectPath),
         STUDIO_CONFIG_FILE,
       );
+      if (!(await fileExists(configPath))) {
+        return {
+          defaultMedium: "claude-code",
+          language: "ja",
+          logLevel: "info",
+          allowGitHooks: false,
+        };
+      }
       const content = await readTextFile(configPath);
       const parsed = parseYaml(content) as Record<string, unknown>;
       const studio = parsed.studio as Record<string, unknown>;
@@ -85,6 +93,9 @@ function createConfigPort(): ConfigPort {
         resolveAtelierPath(projectPath),
         STUDIO_CONFIG_FILE,
       );
+      if (!(await fileExists(configPath))) {
+        return {};
+      }
       const content = await readTextFile(configPath);
       const parsed = parseYaml(content) as Record<string, unknown>;
       const media = (parsed.media ?? {}) as Record<string, Record<string, unknown>>;

@@ -12,7 +12,7 @@ import { CommissionValidateUseCase } from "../../application/use-cases/validate-
 import { CreatePRUseCase } from "../../application/use-cases/create-pr.use-case.js";
 import { createPRAdapter } from "../../adapters/vcs/create-pr-adapter.js";
 import { createEventBus } from "../../infrastructure/event-bus/event-emitter.js";
-import { readTextFile, listFiles } from "../../infrastructure/fs/file-system.js";
+import { readTextFile, listFiles, fileExists } from "../../infrastructure/fs/file-system.js";
 import { resolveAtelierPath } from "../../shared/utils.js";
 import { COMMISSIONS_DIR, STUDIO_CONFIG_FILE } from "../../shared/constants.js";
 import {
@@ -39,6 +39,9 @@ function createConfigPort(): ConfigPort {
         resolveAtelierPath(projectPath),
         STUDIO_CONFIG_FILE,
       );
+      if (!(await fileExists(configPath))) {
+        return { defaultMedium: "claude-code", language: "ja", logLevel: "info" };
+      }
       const content = await readTextFile(configPath);
       const parsed = parseYaml(content) as Record<string, unknown>;
       const studio = parsed.studio as Record<string, unknown>;
@@ -55,6 +58,9 @@ function createConfigPort(): ConfigPort {
         resolveAtelierPath(projectPath),
         STUDIO_CONFIG_FILE,
       );
+      if (!(await fileExists(configPath))) {
+        return {};
+      }
       const content = await readTextFile(configPath);
       const parsed = parseYaml(content) as Record<string, unknown>;
       const media = (parsed.media ?? {}) as Record<string, Record<string, unknown>>;

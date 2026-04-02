@@ -170,13 +170,17 @@ async function selectExitAction(): Promise<"go" | "save_task" | "save_requiremen
 // ── Commission 実行インフラ構築 ──────────────────────────
 
 async function buildCommissionInfra(projectPath: string) {
-  const { readTextFile: readText } = await import("../../infrastructure/fs/file-system.js");
+  const { readTextFile: readText, fileExists: fExists } = await import("../../infrastructure/fs/file-system.js");
   const { STUDIO_CONFIG_FILE } = await import("../../shared/constants.js");
   const { simpleGit } = await import("simple-git");
 
   const configPort = {
     async loadStudioConfig(pp: string) {
-      const content = await readText(path.join(resolveAtelierPath(pp), STUDIO_CONFIG_FILE));
+      const cfgPath = path.join(resolveAtelierPath(pp), STUDIO_CONFIG_FILE);
+      if (!(await fExists(cfgPath))) {
+        return { defaultMedium: "claude-code", language: "ja", logLevel: "info" as const };
+      }
+      const content = await readText(cfgPath);
       const parsed = parseYaml(content) as Record<string, unknown>;
       const studio = parsed.studio as Record<string, unknown>;
 
@@ -198,7 +202,11 @@ async function buildCommissionInfra(projectPath: string) {
       };
     },
     async loadMediaConfig(pp: string) {
-      const content = await readText(path.join(resolveAtelierPath(pp), STUDIO_CONFIG_FILE));
+      const cfgPath = path.join(resolveAtelierPath(pp), STUDIO_CONFIG_FILE);
+      if (!(await fExists(cfgPath))) {
+        return {};
+      }
+      const content = await readText(cfgPath);
       const parsed = parseYaml(content) as Record<string, unknown>;
       const media = (parsed.media ?? {}) as Record<string, Record<string, unknown>>;
       const result: Record<string, { command: string; args: string[] }> = {};
