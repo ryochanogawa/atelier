@@ -24,9 +24,8 @@ inputs:
     required: false
     default: 'false'
   base-branch:
-    description: 'Base branch for PR'
+    description: 'Base branch for PR (default: repository default branch)'
     required: false
-    default: 'main'
 runs:
   using: 'composite'
   steps:
@@ -41,7 +40,11 @@ runs:
           ARGS="$ARGS --commission ${{ inputs.commission }}"
         fi
         if [ "${{ inputs.auto-pr }}" = "true" ]; then
-          ARGS="$ARGS --auto-pr --base ${{ inputs.base-branch }}"
+          BASE="${{ inputs.base-branch }}"
+          if [ -z "$BASE" ]; then
+            BASE=$(git remote show origin | grep 'HEAD branch' | sed 's/.*: //')
+          fi
+          ARGS="$ARGS --auto-pr --base $BASE"
         fi
         if [ "${{ inputs.draft }}" = "true" ]; then
           ARGS="$ARGS --draft"
