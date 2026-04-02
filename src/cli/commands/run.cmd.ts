@@ -18,7 +18,7 @@ import type { StudioConfig, MediumConfig, PaletteProviderConfig, NotificationCon
 import { createEventBus } from "../../infrastructure/event-bus/event-emitter.js";
 import { readTextFile, fileExists } from "../../infrastructure/fs/file-system.js";
 import { resolveAtelierPath, generateRunId } from "../../shared/utils.js";
-import { STUDIO_CONFIG_FILE } from "../../shared/constants.js";
+import { STUDIO_CONFIG_FILE, DEFAULT_MEDIA } from "../../shared/constants.js";
 import {
   printSuccess,
   printError,
@@ -94,7 +94,7 @@ function createConfigPort(): ConfigPort {
         STUDIO_CONFIG_FILE,
       );
       if (!(await fileExists(configPath))) {
-        return {};
+        return DEFAULT_MEDIA;
       }
       const content = await readTextFile(configPath);
       const parsed = parseYaml(content) as Record<string, unknown>;

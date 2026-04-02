@@ -30,7 +30,7 @@ import { parse as parseYaml } from "yaml";
 import { simpleGit } from "simple-git";
 import { readTextFile, fileExists } from "../../infrastructure/fs/file-system.js";
 import { resolveAtelierPath } from "../../shared/utils.js";
-import { STUDIO_CONFIG_FILE } from "../../shared/constants.js";
+import { STUDIO_CONFIG_FILE, DEFAULT_MEDIA } from "../../shared/constants.js";
 
 /**
  * 簡易 ConfigPort 実装
@@ -66,7 +66,7 @@ function createConfigPort(): ConfigPort {
         STUDIO_CONFIG_FILE,
       );
       if (!(await fileExists(configPath))) {
-        return {};
+        return DEFAULT_MEDIA;
       }
       const content = await readTextFile(configPath);
       const parsed = parseYaml(content) as Record<string, unknown>;

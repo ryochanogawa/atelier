@@ -204,7 +204,8 @@ async function buildCommissionInfra(projectPath: string) {
     async loadMediaConfig(pp: string) {
       const cfgPath = path.join(resolveAtelierPath(pp), STUDIO_CONFIG_FILE);
       if (!(await fExists(cfgPath))) {
-        return {};
+        const { DEFAULT_MEDIA: dm } = await import("../../shared/constants.js");
+        return dm;
       }
       const content = await readText(cfgPath);
       const parsed = parseYaml(content) as Record<string, unknown>;

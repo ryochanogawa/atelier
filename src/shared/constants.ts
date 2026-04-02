@@ -45,6 +45,13 @@ export const INSTRUCTIONS_DIR = "instructions";
 /** ログディレクトリ名 */
 export const LOGS_DIR = "logs";
 
+/** studio.yaml が存在しない場合のデフォルト media 定義 */
+export const DEFAULT_MEDIA: Record<string, { command: string; args: string[] }> = {
+  "claude-code": { command: "claude", args: ["--print", "--dangerously-skip-permissions"] },
+  codex: { command: "codex", args: ["--quiet"] },
+  gemini: { command: "gemini", args: ["--prompt"] },
+};
+
 /** 要件定義ディレクトリ名 */
 export const REQUIREMENTS_DIR = "requirements";
 

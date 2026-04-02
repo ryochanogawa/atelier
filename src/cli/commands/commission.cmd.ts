@@ -14,7 +14,7 @@ import { createPRAdapter } from "../../adapters/vcs/create-pr-adapter.js";
 import { createEventBus } from "../../infrastructure/event-bus/event-emitter.js";
 import { readTextFile, listFiles, fileExists } from "../../infrastructure/fs/file-system.js";
 import { resolveAtelierPath } from "../../shared/utils.js";
-import { COMMISSIONS_DIR, STUDIO_CONFIG_FILE } from "../../shared/constants.js";
+import { COMMISSIONS_DIR, STUDIO_CONFIG_FILE, DEFAULT_MEDIA } from "../../shared/constants.js";
 import {
   printRunResult,
   printTable,
@@ -59,7 +59,7 @@ function createConfigPort(): ConfigPort {
         STUDIO_CONFIG_FILE,
       );
       if (!(await fileExists(configPath))) {
-        return {};
+        return DEFAULT_MEDIA;
       }
       const content = await readTextFile(configPath);
       const parsed = parseYaml(content) as Record<string, unknown>;
