@@ -26,12 +26,17 @@ inputs:
   base-branch:
     description: 'Base branch for PR (default: repository default branch)'
     required: false
+  comment-result:
+    description: 'Post ATELIER result as issue comment'
+    required: false
+    default: 'false'
 runs:
   using: 'composite'
   steps:
     - name: Run ATELIER
       shell: bash
       run: |
+        set -o pipefail
         ARGS=""
         if [ "${{ inputs.direct }}" = "true" ]; then
           ARGS="$ARGS --direct"
@@ -50,8 +55,30 @@ runs:
           ARGS="$ARGS --draft"
         fi
         if [ -n "${{ inputs.task }}" ]; then
-          atelier "${{ inputs.task }}" $ARGS
+          atelier "${{ inputs.task }}" $ARGS 2>&1 | tee "$RUNNER_TEMP/atelier-result.log"
         elif [ -n "${{ github.event.comment.body }}" ]; then
           TASK=$(echo "${{ github.event.comment.body }}" | sed 's/@atelier //')
-          atelier "$TASK" $ARGS
+          atelier "$TASK" $ARGS 2>&1 | tee "$RUNNER_TEMP/atelier-result.log"
         fi
+    - name: Post result to Issue
+      if: inputs.comment-result == 'true' && github.event.issue.number
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        RESULT=$(tail -c 60000 "$RUNNER_TEMP/atelier-result.log" 2>/dev/null || echo "No output captured")
+        gh issue comment "${{ github.event.issue.number }}" \
+          --repo "${{ github.repository }}" \
+          --body "$(cat <<EOF
+        ## ATELIER 実行結果
+
+        <details>
+        <summary>実行ログ</summary>
+
+        \`\`\`
+        $RESULT
+        \`\`\`
+
+        </details>
+        EOF
+        )"
