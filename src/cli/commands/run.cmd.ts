@@ -443,6 +443,7 @@ export async function executeTask(
             head: branchName,
             draft: opts.draft,
             taskDescription: task,
+            worktreePath: worktreeCreated ? worktreePath : undefined,
           });
           prSpinner.stop();
           if (pr.skipped) {

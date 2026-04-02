@@ -36,6 +36,8 @@ export class CreatePRUseCase {
       templateTitle?: string;
       /** テンプレートから生成済みの PR 本文 */
       templateBody?: string;
+      /** worktree パス（pushする際のcwd） */
+      worktreePath?: string;
     },
   ): Promise<CreatePRResult> {
     this.loggerPort.info(`PR を作成中... (base: ${options.base}, head: ${options.head})`);
@@ -54,7 +56,7 @@ export class CreatePRUseCase {
 
     // リモートへプッシュ
     this.loggerPort.info(`ブランチ '${options.head}' をリモートへプッシュ中...`);
-    await this.pullRequest.pushBranch(options.head);
+    await this.pullRequest.pushBranch(options.head, options.worktreePath);
 
     const title = options.templateTitle ?? this.buildTitle(runResult, options.taskDescription);
     const body = options.templateBody ?? this.buildBody(runResult);

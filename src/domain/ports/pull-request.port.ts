@@ -18,7 +18,7 @@ export interface PullRequestPort {
     Array<{ number: number; title: string; state: string; url: string }>
   >;
 
-  pushBranch(branch: string): Promise<void>;
+  pushBranch(branch: string, cwd?: string): Promise<void>;
 
   commentOnPr(prNumber: number, body: string): Promise<void>;
 }

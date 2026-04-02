@@ -23,8 +23,8 @@ export class GitHubPRAdapter implements PullRequestPort {
   /**
    * リモートへブランチをプッシュする。
    */
-  async pushBranch(branch: string): Promise<void> {
-    await execa("git", ["push", "origin", branch]);
+  async pushBranch(branch: string, cwd?: string): Promise<void> {
+    await execa("git", ["push", "origin", branch], cwd ? { cwd } : {});
   }
 
   /**
