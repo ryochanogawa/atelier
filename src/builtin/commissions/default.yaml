@@ -5,14 +5,19 @@ strokes:
   - name: plan
     palette: planner
     instruction: |
-      プロジェクトの要件を分析し、実装計画を策定してください。
-      以下を含めてください：
+      以下のタスクについて、プロジェクトの要件を分析し、実装計画を策定してください。
+
+      ## タスク
+      {{task}}
+
+      ## 計画に含める内容
       - 実装するファイルの一覧と各ファイルの責務
       - 依存関係の整理
       - 実装の優先順位
       - 技術的なリスクと対策
       - 見積もり時間
-    inputs: []
+    inputs:
+      - task
     outputs:
       - implementation_plan
     transitions:
