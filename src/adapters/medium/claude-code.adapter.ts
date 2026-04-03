@@ -125,7 +125,7 @@ export class ClaudeCodeAdapter implements MediumPort {
 
   private buildArgs(request: MediumExecuteRequest): string[] {
     // プロンプトは stdin 経由で渡すため、ここでは含めない
-    const args: string[] = ["--print"];
+    const args: string[] = ["--print", "--dangerously-skip-permissions"];
 
     if (request.systemPrompt) {
       args.push("--system-prompt", request.systemPrompt);

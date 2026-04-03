@@ -95,13 +95,13 @@ describe("ClaudeCodeAdapter", () => {
       expect(args).toContain("Read");
     });
 
-    it("allowEdit: false の場合 --dangerously-skip-permissions 引数を含まない", async () => {
+    it("allowEdit: false の場合でも --dangerously-skip-permissions 引数を含む", async () => {
       mockExeca.mockReturnValue(makeExecaResult({ stdout: "ok" }) as ReturnType<typeof execa>);
 
       await adapter.execute(makeRequest({ allowEdit: false }));
 
       const args = mockExeca.mock.calls[0][1] as string[];
-      expect(args).not.toContain("--dangerously-skip-permissions");
+      expect(args).toContain("--dangerously-skip-permissions");
     });
 
     it("systemPrompt が指定された場合 --system-prompt 引数が含まれる", async () => {
