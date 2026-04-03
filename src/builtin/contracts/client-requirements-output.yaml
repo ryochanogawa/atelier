@@ -1,0 +1,138 @@
+name: client-requirements-output
+description: 顧客向け要件定義書の構造化JSON出力フォーマット。スプレッドシート変換用。
+
+format: |
+  以下のJSON形式で出力してください。必ず有効なJSONとして出力すること。
+  コードブロック（```json）で囲んでください。
+
+  ```json
+  {
+    "projectInfo": {
+      "projectName": "プロジェクト名",
+      "documentTitle": "ドキュメントタイトル",
+      "version": "1.0",
+      "author": "作成者",
+      "createdDate": "YYYY-MM-DD",
+      "updatedDate": "YYYY-MM-DD"
+    },
+    "processOverview": "処理概要のテキスト説明",
+    "requirements": [
+      {
+        "id": "REQ-001",
+        "category": "カテゴリ名",
+        "name": "要件名",
+        "description": "要件の詳細説明",
+        "priority": "Must|Should|Could",
+        "acceptanceCriteria": "受け入れ基準"
+      }
+    ],
+    "inputParameters": [
+      {
+        "no": 1,
+        "dataId": "データID",
+        "itemName": "項目名",
+        "digits": "桁数",
+        "type": "型（文字列/数値/日付等）",
+        "remarks": "摘要"
+      }
+    ],
+    "outputParameters": [
+      {
+        "no": 1,
+        "dataId": "データID",
+        "itemName": "項目名",
+        "digits": "桁数",
+        "type": "型",
+        "remarks": "摘要"
+      }
+    ],
+    "businessFlows": [
+      {
+        "flowName": "業務フロー名",
+        "description": "フローの概要説明",
+        "actors": ["アクター1", "アクター2", "システム"],
+        "steps": [
+          {
+            "stepNumber": 1,
+            "actor": "アクター名",
+            "action": "操作・処理内容",
+            "details": "補足説明",
+            "branchCondition": "分岐条件（ある場合）",
+            "branchYes": "Yesの場合の遷移先ステップ番号",
+            "branchNo": "Noの場合の遷移先ステップ番号"
+          }
+        ]
+      }
+    ],
+    "screens": [
+      {
+        "screenId": "SCR-001",
+        "screenName": "画面名",
+        "description": "画面の目的・概要",
+        "mainItems": ["主な表示・入力項目"],
+        "relatedFlows": ["関連する業務フロー名"],
+        "transitions": ["遷移先画面ID"]
+      }
+    ],
+    "terminology": [
+      {
+        "term": "用語",
+        "definition": "定義・説明",
+        "relatedDomain": "関連ドメイン"
+      }
+    ],
+    "relatedSettings": [
+      {
+        "settingItem": "設定項目",
+        "settingLocation": "設定場所",
+        "remarks": "備考"
+      }
+    ]
+  }
+  ```
+
+fields:
+  - name: projectInfo
+    type: object
+    required: true
+    description: プロジェクト基本情報
+
+  - name: processOverview
+    type: string
+    required: true
+    description: 処理概要の説明文
+
+  - name: requirements
+    type: array
+    required: true
+    description: 要件一覧（ID、カテゴリ、名前、説明、優先度、受け入れ基準）
+
+  - name: inputParameters
+    type: array
+    required: false
+    description: 入力パラメータ一覧
+
+  - name: outputParameters
+    type: array
+    required: false
+    description: 出力パラメータ一覧
+
+  - name: businessFlows
+    type: array
+    required: true
+    description: 業務フロー一覧（スイムレーン形式のステップ情報を含む）
+
+  - name: screens
+    type: array
+    required: false
+    description: 画面一覧
+
+  - name: terminology
+    type: array
+    required: false
+    description: 用語集
+
+  - name: relatedSettings
+    type: array
+    required: false
+    description: 関連設定一覧

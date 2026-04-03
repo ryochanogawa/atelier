@@ -48,6 +48,13 @@ export {
   type LoggerPort,
 } from "./logger/index.js";
 
+// Spreadsheet adapters
+export {
+  GoogleSheetsAdapter,
+  type SpreadsheetPort,
+  type SpreadsheetWriteResult,
+} from "./spreadsheet/index.js";
+
 // Theme adapters
 export {
   BIOHAZARD_THEME,

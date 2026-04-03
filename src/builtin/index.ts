@@ -26,6 +26,7 @@ const BUILTIN_COMMISSIONS = [
   "spec-requirements",
   "spec-tasks",
   "test-enhancement",
+  "client-requirements",
 ] as const;
 const BUILTIN_PALETTES = [
   "planner",
@@ -46,6 +47,7 @@ const BUILTIN_PALETTES = [
   "performance-engineer",
   "supervisor",
   "conductor",
+  "business-analyst",
 ] as const;
 const BUILTIN_POLICIES = [
   "default-policy",
@@ -66,6 +68,7 @@ const BUILTIN_CONTRACTS = [
   "test-output",
   "security-review-output",
   "design-output",
+  "client-requirements-output",
 ] as const;
 
 export type BuiltinCommissionName = (typeof BUILTIN_COMMISSIONS)[number];

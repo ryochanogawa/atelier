@@ -564,6 +564,135 @@ export function createSpecCommand(): Command {
       }
     });
 
+  // ── spec client [description] ─────────────────
+  spec
+    .command("client [description]")
+    .description("顧客向け要件定義書を生成し、スプレッドシートまたはJSONとして出力する")
+    .option("--output <format>", "出力形式 (sheets | json)", "json")
+    .option("--spec <id>", "既存specのIDから要件を読み込む")
+    .action(async (description: string | undefined, opts: { output: string; spec?: string }) => {
+      const projectPath = process.cwd();
+      const outputFormat = opts.output;
+
+      if (outputFormat !== "json" && outputFormat !== "sheets") {
+        printError("--output には 'json' または 'sheets' を指定してください");
+        process.exitCode = 1;
+        return;
+      }
+
+      // 入力の取得: --spec 指定時は既存 requirements.md を読み込む
+      let specDir: string | undefined;
+      let specDirName: string | undefined;
+
+      if (opts.spec) {
+        const specId = parseInt(opts.spec, 10);
+        if (isNaN(specId) || specId < 1) {
+          printError("--spec には正の整数を指定してください");
+          process.exitCode = 1;
+          return;
+        }
+
+        const dir = await resolveSpecDir(projectPath, specId);
+        if (!dir) {
+          printError(`Spec #${specId} が見つかりません`);
+          process.exitCode = 1;
+          return;
+        }
+
+        const reqPath = path.join(dir, "requirements.md");
+        if (await fileExists(reqPath)) {
+          description = await readTextFile(reqPath);
+        }
+        specDir = dir;
+        specDirName = path.basename(dir);
+      }
+
+      // 説明文がなければ対話入力
+      if (!description) {
+        description = await promptDescription();
+        if (!description.trim()) {
+          printError("説明文が入力されませんでした");
+          process.exitCode = 1;
+          return;
+        }
+      }
+
+      const spinner = createSpinner("顧客向け要件定義書を生成中...").start();
+
+      try {
+        // specディレクトリの準備（--spec 未指定時は新規作成）
+        if (!specDir) {
+          const id = await nextSpecId(projectPath);
+          const slug = toSlug(description.slice(0, 80));
+          specDirName = `${id}-${slug}`;
+          specDir = path.join(specsDir(projectPath), specDirName);
+          await ensureDir(specDir);
+
+          const specData: SpecJson = {
+            id,
+            name: slug,
+            description: description.slice(0, 200),
+            phase: "created",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          await saveSpecJson(specDir, specData);
+        }
+
+        // Commission 実行
+        spinner.text = "AI が要件定義書を生成中...";
+        await runCommission(projectPath, "client-requirements", {
+          requirements: description,
+          spec_dir: specDirName!,
+        });
+
+        // Commission が保存した JSON を読み込む
+        const jsonPath = path.join(specDir, "client-requirements.json");
+        if (!(await fileExists(jsonPath))) {
+          spinner.fail("要件定義JSONが生成されませんでした");
+          process.exitCode = 1;
+          return;
+        }
+
+        const rawJson = await readTextFile(jsonPath);
+
+        // Zod バリデーション
+        spinner.text = "バリデーション中...";
+        const { parseClientRequirements } = await import(
+          "../../application/dto/client-requirements.dto.js"
+        );
+        const dto = parseClientRequirements(rawJson);
+
+        if (outputFormat === "json") {
+          // バリデーション済み JSON を上書き保存
+          await writeTextFile(jsonPath, JSON.stringify(dto, null, 2));
+          spinner.stop();
+          printSuccess(`要件定義書 JSON を保存しました: .atelier/specs/${specDirName}/client-requirements.json`);
+        } else {
+          // スプレッドシート出力
+          spinner.text = "スプレッドシートを作成中...";
+          const { formatClientRequirements } = await import(
+            "../../application/services/spreadsheet-formatter.service.js"
+          );
+          const { GoogleSheetsAdapter } = await import(
+            "../../adapters/spreadsheet/google-sheets.adapter.js"
+          );
+
+          const document = formatClientRequirements(dto);
+          const adapter = new GoogleSheetsAdapter();
+          const result = await adapter.create(document);
+
+          spinner.stop();
+          printSuccess("スプレッドシートを作成しました");
+          printInfo(`URL: ${result.spreadsheetUrl}`);
+        }
+      } catch (error) {
+        spinner.fail("要件定義書の生成に失敗しました");
+        printError(error instanceof Error ? error.message : String(error));
+        process.exitCode = 1;
+      }
+    });
+
   // ── spec list ─────────────────────────────────
   spec
     .command("list")
