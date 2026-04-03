@@ -3,7 +3,7 @@
  * Mediumアダプターの登録・取得・一覧管理。
  */
 
-import type { MediumPort, MediumAvailability } from "./types.js";
+import type { MediumPort, MediumAvailability } from "../../domain/ports/medium.port.js";
 import { ClaudeCodeAdapter } from "./claude-code.adapter.js";
 import { CodexAdapter } from "./codex.adapter.js";
 import { GeminiAdapter } from "./gemini.adapter.js";

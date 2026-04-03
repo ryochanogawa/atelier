@@ -26,7 +26,7 @@ import {
   createSpinner,
 } from "../output.js";
 import type { ConfigPort, VcsPort, LoggerPort } from "../../application/use-cases/run-commission.use-case.js";
-import type { MediumRegistry } from "../../application/services/commission-runner.service.js";
+import { createMediumExecutor } from "../factories/medium.factory.js";
 import type { StudioConfig, MediumConfig } from "../../shared/types.js";
 
 /**
@@ -165,24 +165,6 @@ function createNoopVcsPort(): VcsPort {
   };
 }
 
-/**
- * MediumRegistry を studio.yaml から構築する。
- */
-async function createMediumRegistry(projectPath: string): Promise<MediumRegistry> {
-  const configPort = createConfigPort();
-  const mediaConfig = await configPort.loadMediaConfig(projectPath);
-
-  return {
-    getCommand(mediumName: string) {
-      const config = mediaConfig[mediumName];
-      return config ? { command: config.command, args: config.args } : undefined;
-    },
-    listMedia() {
-      return Object.keys(mediaConfig);
-    },
-  };
-}
-
 /** --context key=file を蓄積するコレクタ */
 function collectContext(
   value: string,
@@ -218,14 +200,14 @@ export function createCommissionCommand(): Command {
       const spinner = createSpinner(`Commission '${name}' を実行中...`).start();
 
       try {
-        const mediumRegistry = await createMediumRegistry(projectPath);
+        const mediumExecutor = createMediumExecutor();
         const eventBus = createEventBus();
         const vcsPort = opts.skipGit ? createNoopVcsPort() : createVcsPort();
         const useCase = new CommissionRunUseCase(
           createConfigPort(),
           vcsPort,
           createLoggerPort(),
-          mediumRegistry,
+          mediumExecutor,
           eventBus,
         );
 

@@ -5,7 +5,6 @@
 
 import path from "node:path";
 import fs from "node:fs/promises";
-import os from "node:os";
 import { parse as parseYaml } from "yaml";
 import { Stroke, type StrokeDefinition, type ArpeggioConfig, type ParallelSubStroke } from "../../domain/models/stroke.model.js";
 import { Canvas } from "../../domain/models/canvas.model.js";
@@ -15,8 +14,8 @@ import { CommissionStatus } from "../../domain/value-objects/commission-status.v
 import type { CommissionDefinition, LoopMonitorYaml, RunOptions, PaletteProviderConfig } from "../../shared/types.js";
 import type { RunErrorDto } from "../dto/run-result.dto.js";
 import type { TypedEventEmitter, AtelierEvents } from "../../infrastructure/event-bus/event-emitter.js";
-import { runSubprocess } from "../../infrastructure/process/subprocess.js";
 import { readTextFile, fileExists } from "../../infrastructure/fs/file-system.js";
+import type { MediumExecutor } from "../ports/medium-executor.port.js";
 import { resolveAtelierPath } from "../../shared/utils.js";
 import { PALETTES_DIR, POLICIES_DIR, CONTRACTS_DIR, INSTRUCTIONS_DIR, KNOWLEDGE_DIR } from "../../shared/constants.js";
 import {
@@ -30,10 +29,8 @@ import { runArpeggio } from "./arpeggio-runner.service.js";
 import { runConductor, type ConductorConfig } from "./conductor.service.js";
 import { parseStatusTag } from "../../domain/services/conductor-parser.js";
 
-export interface MediumRegistry {
-  getCommand(mediumName: string): { command: string; args: readonly string[] } | undefined;
-  listMedia(): string[];
-}
+/** @deprecated MediumExecutor に移行済み。後方互換用に re-export */
+export type { MediumExecutor } from "../ports/medium-executor.port.js";
 
 /** Palette YAML の生データ型 */
 interface RawPalette {
@@ -67,7 +64,7 @@ interface FacetedPrompt {
 
 export interface CommissionRunnerDeps {
   readonly eventBus: TypedEventEmitter<AtelierEvents>;
-  readonly mediumRegistry: MediumRegistry;
+  readonly mediumExecutor: MediumExecutor;
   readonly defaultMedium: string;
   readonly cwd: string;
   readonly projectPath: string;
@@ -534,11 +531,10 @@ export class CommissionRunnerService {
 
     stroke.transitionTo(StrokeStatus.Executing);
 
-    // Medium を通じて実行
-    const mediumConfig = this.deps.mediumRegistry.getCommand(stroke.medium);
-    if (!mediumConfig) {
-      throw new Error(`Medium not found: ${stroke.medium}`);
-    }
+    // Persona（system prompt）をプロンプト本文の先頭に含める
+    const fullPrompt = systemPrompt
+      ? `[Persona]\n${systemPrompt}\n\n${userPrompt}`
+      : userPrompt;
 
     this.deps.eventBus.emit("medium:request", {
       runId,
@@ -546,116 +542,59 @@ export class CommissionRunnerService {
       strokeName: stroke.name,
     });
 
-    const args = [...mediumConfig.args];
-    const isCodex = mediumConfig.command === "codex" || stroke.medium === "codex";
-    const isGemini = mediumConfig.command === "gemini" || stroke.medium === "gemini";
+    console.error(`[stroke:${stroke.name}] executing via MediumExecutor (medium=${stroke.medium})...`);
 
-    if (isCodex) {
-      // Codex: `codex exec` サブコマンドで非対話実行
-      if (!args.includes("exec")) {
-        args.unshift("exec");
-      }
-      if (stroke.allowEdit) {
-        args.push("--full-auto");
-      }
-      if (stroke.model) {
-        args.push("--model", stroke.model);
-      }
-    } else if (isGemini) {
-      // Gemini: 独自の引数体系
-      if (stroke.model) {
-        args.push("--model", stroke.model);
-      }
-    } else {
-      // Claude Code（デフォルト）
-      // -p (--print) がなければ追加（Commission は常に非インタラクティブ）
-      if (!args.includes("--print") && !args.includes("-p")) {
-        args.unshift("-p");
-      }
-      // stroke 固有のモデル指定
-      if (stroke.model) {
-        args.push("--model", stroke.model);
-      }
-      // stroke 固有のツールホワイトリスト（allowedTools が明示指定されている場合はそちらを優先）
-      if (stroke.allowedTools && stroke.allowedTools.length > 0) {
-        args.push("--allowedTools", ...stroke.allowedTools);
-      } else if (stroke.permissionMode && !args.includes("--allowedTools")) {
-        // permission_mode による許可ツール決定
-        args.push("--allowedTools", ...this.resolvePermissionModeTools(stroke.permissionMode));
-      } else if (stroke.allowEdit && !args.includes("--allowedTools")) {
-        // allow_edit の場合、ファイル編集ツールを許可（後方互換）
-        args.push("--allowedTools", "Edit", "Write", "Read", "Glob", "Grep", "Bash");
-      }
-    }
-
-    // Persona（system prompt）をプロンプト本文の先頭に含める
-    // （--append-system-prompt は execa 経由だとシェル展開の問題があるため）
-    const fullPrompt = systemPrompt
-      ? `[Persona]\n${systemPrompt}\n\n${userPrompt}`
-      : userPrompt;
-
-    // プロンプトを一時ファイルに書き出し、cat でパイプする
-    // （引数で渡すとOS制限、stdin だとツールが使えない問題を回避）
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "atelier-"));
-    const promptFile = path.join(tmpDir, "prompt.md");
-    await fs.writeFile(promptFile, fullPrompt, "utf-8");
-
-    const escapeShell = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
-    const shellCmd = `cat ${escapeShell(promptFile)} | ${mediumConfig.command} ${args.map(escapeShell).join(" ")}`;
-
-    console.error(`[stroke:${stroke.name}] executing: ${shellCmd.slice(0, 300)}...`);
-
-    let result;
-    try {
-      result = await runSubprocess(
-        "bash",
-        ["-c", shellCmd],
-        { cwd: this.deps.cwd, timeout: 600_000 },
-      );
-    } finally {
-      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
-    }
+    const result = await this.deps.mediumExecutor.execute({
+      medium: stroke.medium,
+      prompt: fullPrompt,
+      workingDirectory: this.deps.cwd,
+      allowEdit: stroke.allowEdit,
+      timeoutMs: 600_000,
+      model: stroke.model,
+      allowedTools: stroke.allowedTools,
+      permissionMode: stroke.permissionMode,
+    });
 
     this.deps.eventBus.emit("medium:response", {
       runId,
       mediumName: stroke.medium,
       strokeName: stroke.name,
-      duration: result.duration,
+      duration: result.durationMs,
     });
 
     // 実行結果をログ出力
-    console.error(`\n[stroke:${stroke.name}] completed (exitCode=${result.exitCode}, ${result.stdout.length} chars, ${Math.round(result.duration / 1000)}s)`);
+    console.error(`\n[stroke:${stroke.name}] completed (exitCode=${result.exitCode}, ${result.rawStdout.length} chars, ${Math.round(result.durationMs / 1000)}s)`);
 
     // stdout の内容を表示（途中経過）
-    if (result.stdout.length > 0) {
-      const preview = result.stdout.length > 2000
-        ? result.stdout.slice(0, 2000) + `\n... (${result.stdout.length} chars total)`
-        : result.stdout;
+    if (result.rawStdout.length > 0) {
+      const preview = result.rawStdout.length > 2000
+        ? result.rawStdout.slice(0, 2000) + `\n... (${result.rawStdout.length} chars total)`
+        : result.rawStdout;
       console.error(`[stroke:${stroke.name}] output:\n${preview}\n`);
     }
 
     // stderr があれば表示
-    if (result.stderr.length > 0) {
-      console.error(`[stroke:${stroke.name}] stderr: ${result.stderr.slice(0, 500)}`);
+    if (result.rawStderr.length > 0) {
+      console.error(`[stroke:${stroke.name}] stderr: ${result.rawStderr.slice(0, 500)}`);
     }
 
     // 非ゼロ終了コードはエラーとして扱う
     if (result.exitCode !== 0) {
       throw new Error(
-        `Medium exited with code ${result.exitCode}: ${result.stderr.slice(0, 500) || result.stdout.slice(0, 500)}`,
+        `Medium exited with code ${result.exitCode}: ${result.rawStderr.slice(0, 500) || result.rawStdout.slice(0, 500)}`,
       );
     }
 
     // 結果を Canvas に格納
     for (const outputKey of stroke.outputs) {
-      canvas.set(outputKey, result.stdout);
+      canvas.set(outputKey, result.rawStdout);
     }
 
     // Quality Gates チェック
     this.checkQualityGates(stroke, canvas);
 
     // Output Contracts: 複数ファイル出力の定義がある場合、ファイルパスを Canvas に保存
-    await this.processOutputContracts(stroke, canvas, result.stdout);
+    await this.processOutputContracts(stroke, canvas, result.rawStdout);
 
     stroke.transitionTo(StrokeStatus.Completed);
   }
@@ -701,12 +640,6 @@ export class CommissionRunnerService {
 
     stroke.transitionTo(StrokeStatus.Executing);
 
-    // Medium 設定を取得
-    const mediumConfig = this.deps.mediumRegistry.getCommand(stroke.medium);
-    if (!mediumConfig) {
-      throw new Error(`Medium not found: ${stroke.medium}`);
-    }
-
     this.deps.eventBus.emit("medium:request", {
       runId,
       mediumName: stroke.medium,
@@ -728,35 +661,32 @@ export class CommissionRunnerService {
           strokeName: `${stroke.name}.${sub.name}`,
         });
 
-        const subStart = Date.now();
-
-        const result = await this.runMediumWithPrompt(
-          fullPrompt,
-          mediumConfig,
-          stroke.medium,
-          `${stroke.name}.${sub.name}`,
-          stroke.allowEdit,
-          `atelier-parallel-${sub.name}-`,
-          stroke.model,
-          stroke.allowedTools,
-        );
+        const result = await this.deps.mediumExecutor.execute({
+          medium: stroke.medium,
+          prompt: fullPrompt,
+          workingDirectory: this.deps.cwd,
+          allowEdit: stroke.allowEdit,
+          timeoutMs: 600_000,
+          model: stroke.model,
+          allowedTools: stroke.allowedTools,
+        });
 
         this.deps.eventBus.emit("medium:response", {
           runId,
           mediumName: stroke.medium,
           strokeName: `${stroke.name}.${sub.name}`,
-          duration: Date.now() - subStart,
+          duration: result.durationMs,
         });
 
-        console.error(`[parallel:${stroke.name}.${sub.name}] completed (exitCode=${result.exitCode}, ${result.stdout.length} chars)`);
+        console.error(`[parallel:${stroke.name}.${sub.name}] completed (exitCode=${result.exitCode}, ${result.rawStdout.length} chars)`);
 
         if (result.exitCode !== 0) {
           throw new Error(
-            `Sub-stroke ${sub.name} failed (exitCode=${result.exitCode}): ${result.stderr.slice(0, 500) || result.stdout.slice(0, 500)}`,
+            `Sub-stroke ${sub.name} failed (exitCode=${result.exitCode}): ${result.rawStderr.slice(0, 500) || result.rawStdout.slice(0, 500)}`,
           );
         }
 
-        return { name: sub.name, output: result.stdout };
+        return { name: sub.name, output: result.rawStdout };
       }),
     );
 
@@ -846,12 +776,6 @@ export class CommissionRunnerService {
 
     stroke.transitionTo(StrokeStatus.Executing);
 
-    // Medium 設定を取得
-    const mediumConfig = this.deps.mediumRegistry.getCommand(stroke.medium);
-    if (!mediumConfig) {
-      throw new Error(`Medium not found: ${stroke.medium}`);
-    }
-
     this.deps.eventBus.emit("medium:request", {
       runId,
       mediumName: stroke.medium,
@@ -868,57 +792,23 @@ export class CommissionRunnerService {
         ? `[Persona]\n${systemPrompt}\n\n${expandedInstruction}`
         : expandedInstruction;
 
-      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "atelier-arpeggio-"));
-      const promptFile = path.join(tmpDir, "prompt.md");
-      await fs.writeFile(promptFile, fullPrompt, "utf-8");
+      const result = await this.deps.mediumExecutor.execute({
+        medium: stroke.medium,
+        prompt: fullPrompt,
+        workingDirectory: this.deps.cwd,
+        allowEdit: stroke.allowEdit,
+        timeoutMs: 600_000,
+        model: stroke.model,
+        allowedTools: stroke.allowedTools,
+      });
 
-      const args = [...mediumConfig.args];
-      const isCodex = mediumConfig.command === "codex" || stroke.medium === "codex";
-
-      if (isCodex) {
-        if (!args.includes("exec")) {
-          args.unshift("exec");
-        }
-        if (stroke.allowEdit) {
-          args.push("--full-auto");
-        }
-        if (stroke.model) {
-          args.push("--model", stroke.model);
-        }
-      } else {
-        if (!args.includes("--print") && !args.includes("-p")) {
-          args.unshift("-p");
-        }
-        if (stroke.model) {
-          args.push("--model", stroke.model);
-        }
-        if (stroke.allowedTools && stroke.allowedTools.length > 0) {
-          args.push("--allowedTools", ...stroke.allowedTools);
-        } else if (stroke.allowEdit && !args.includes("--allowedTools")) {
-          args.push("--allowedTools", "Edit", "Write", "Read", "Glob", "Grep", "Bash");
-        }
-      }
-
-      const escapeShell = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
-      const shellCmd = `cat ${escapeShell(promptFile)} | ${mediumConfig.command} ${args.map(escapeShell).join(" ")}`;
-
-      try {
-        const result = await runSubprocess(
-          "bash",
-          ["-c", shellCmd],
-          { cwd: this.deps.cwd, timeout: 600_000 },
+      if (result.exitCode !== 0) {
+        throw new Error(
+          `Medium exited with code ${result.exitCode}: ${result.rawStderr.slice(0, 500) || result.rawStdout.slice(0, 500)}`,
         );
-
-        if (result.exitCode !== 0) {
-          throw new Error(
-            `Medium exited with code ${result.exitCode}: ${result.stderr.slice(0, 500) || result.stdout.slice(0, 500)}`,
-          );
-        }
-
-        return result.stdout;
-      } finally {
-        await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
       }
+
+      return result.rawStdout;
     };
 
     // runArpeggio で CSV 読み込み → バッチ分割 → 並列実行 → マージ
@@ -971,11 +861,6 @@ export class CommissionRunnerService {
 
     stroke.transitionTo(StrokeStatus.Executing);
 
-    const mediumConfig = this.deps.mediumRegistry.getCommand(stroke.medium);
-    if (!mediumConfig) {
-      throw new Error(`Medium not found: ${stroke.medium}`);
-    }
-
     this.deps.eventBus.emit("medium:request", {
       runId,
       mediumName: stroke.medium,
@@ -983,40 +868,39 @@ export class CommissionRunnerService {
     });
 
     // Phase 1: リーダーにタスク分解を依頼
-    const leaderResult = await this.runMediumWithPrompt(
-      decompositionPrompt,
-      mediumConfig,
-      stroke.medium,
-      stroke.name,
-      false, // allow_edit = false for decomposition
-      `atelier-team-leader-`,
-      stroke.model,
-      stroke.allowedTools,
-    );
+    const leaderResult = await this.deps.mediumExecutor.execute({
+      medium: stroke.medium,
+      prompt: decompositionPrompt,
+      workingDirectory: this.deps.cwd,
+      allowEdit: false,
+      timeoutMs: 600_000,
+      model: stroke.model,
+      allowedTools: stroke.allowedTools,
+    });
 
     this.deps.eventBus.emit("medium:response", {
       runId,
       mediumName: stroke.medium,
       strokeName: stroke.name,
-      duration: leaderResult.duration,
+      duration: leaderResult.durationMs,
     });
 
-    console.error(`[team-leader:${stroke.name}] Phase 1 decomposition completed (${leaderResult.stdout.length} chars)`);
+    console.error(`[team-leader:${stroke.name}] Phase 1 decomposition completed (${leaderResult.rawStdout.length} chars)`);
 
     if (leaderResult.exitCode !== 0) {
       throw new Error(
-        `Team leader decomposition failed (exitCode=${leaderResult.exitCode}): ${leaderResult.stderr.slice(0, 500) || leaderResult.stdout.slice(0, 500)}`,
+        `Team leader decomposition failed (exitCode=${leaderResult.exitCode}): ${leaderResult.rawStderr.slice(0, 500) || leaderResult.rawStdout.slice(0, 500)}`,
       );
     }
 
     // [SUBTASK] タグでサブタスクを抽出
-    const subtasks = this.extractSubtasks(leaderResult.stdout, maxParts);
+    const subtasks = this.extractSubtasks(leaderResult.rawStdout, maxParts);
 
     if (subtasks.length === 0) {
       // サブタスクが抽出できなかった場合、全体の出力をそのまま結果とする
       console.error(`[team-leader:${stroke.name}] No subtasks found, using full output as result`);
       for (const outputKey of stroke.outputs) {
-        canvas.set(outputKey, leaderResult.stdout);
+        canvas.set(outputKey, leaderResult.rawStdout);
       }
       stroke.transitionTo(StrokeStatus.Completed);
       return;
@@ -1026,10 +910,6 @@ export class CommissionRunnerService {
 
     // === Phase 2: 各サブタスクを並列実行 ===
     const workerMediumName = teamLeader.partMedium ?? stroke.medium;
-    const workerMediumConfig = this.deps.mediumRegistry.getCommand(workerMediumName);
-    if (!workerMediumConfig) {
-      throw new Error(`Medium not found for team leader worker: ${workerMediumName}`);
-    }
 
     // worker 用の Palette（persona）を読み込み
     const workerPaletteName = teamLeader.partPersona ?? stroke.palette;
@@ -1051,38 +931,35 @@ export class CommissionRunnerService {
           strokeName: `${stroke.name}.worker-${index}`,
         });
 
-        const workerStart = Date.now();
-
-        const result = await this.runMediumWithPrompt(
-          workerPrompt,
-          workerMediumConfig,
-          workerMediumName,
-          `${stroke.name}.worker-${index}`,
-          workerAllowEdit,
-          `atelier-worker-${index}-`,
-          stroke.model,
-          stroke.allowedTools,
-        );
+        const result = await this.deps.mediumExecutor.execute({
+          medium: workerMediumName,
+          prompt: workerPrompt,
+          workingDirectory: this.deps.cwd,
+          allowEdit: workerAllowEdit,
+          timeoutMs: 600_000,
+          model: stroke.model,
+          allowedTools: stroke.allowedTools,
+        });
 
         this.deps.eventBus.emit("medium:response", {
           runId,
           mediumName: workerMediumName,
           strokeName: `${stroke.name}.worker-${index}`,
-          duration: Date.now() - workerStart,
+          duration: result.durationMs,
         });
 
-        console.error(`[team-leader:${stroke.name}] worker-${index} completed (exitCode=${result.exitCode}, ${result.stdout.length} chars)`);
+        console.error(`[team-leader:${stroke.name}] worker-${index} completed (exitCode=${result.exitCode}, ${result.rawStdout.length} chars)`);
 
         if (result.exitCode !== 0) {
           throw new Error(
-            `Worker ${index} failed (exitCode=${result.exitCode}): ${result.stderr.slice(0, 500) || result.stdout.slice(0, 500)}`,
+            `Worker ${index} failed (exitCode=${result.exitCode}): ${result.rawStderr.slice(0, 500) || result.rawStdout.slice(0, 500)}`,
           );
         }
 
         return {
           index,
           subtask,
-          output: result.stdout,
+          output: result.rawStdout,
         };
       }),
     );
@@ -1149,80 +1026,6 @@ export class CommissionRunnerService {
 
     // maxParts で制限
     return subtasks.slice(0, maxParts);
-  }
-
-  /**
-   * Medium を通じてプロンプトを実行する共通メソッド。
-   * Team Leader のリーダーと各 worker で共用する。
-   */
-  private async runMediumWithPrompt(
-    fullPrompt: string,
-    mediumConfig: { command: string; args: readonly string[] },
-    mediumName: string,
-    logLabel: string,
-    allowEdit: boolean,
-    tmpPrefix: string,
-    model?: string,
-    allowedTools?: readonly string[],
-  ): Promise<{ stdout: string; stderr: string; exitCode: number; duration: number }> {
-    const args = [...mediumConfig.args];
-    const isCodex = mediumConfig.command === "codex" || mediumName === "codex";
-
-    if (isCodex) {
-      if (!args.includes("exec")) {
-        args.unshift("exec");
-      }
-      if (allowEdit) {
-        args.push("--full-auto");
-      }
-      if (model) {
-        args.push("--model", model);
-      }
-    } else {
-      if (!args.includes("--print") && !args.includes("-p")) {
-        args.unshift("-p");
-      }
-      if (model) {
-        args.push("--model", model);
-      }
-      if (allowedTools && allowedTools.length > 0) {
-        args.push("--allowedTools", ...allowedTools);
-      } else if (allowEdit && !args.includes("--allowedTools")) {
-        args.push("--allowedTools", "Edit", "Write", "Read", "Glob", "Grep", "Bash");
-      }
-    }
-
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), tmpPrefix));
-    const promptFile = path.join(tmpDir, "prompt.md");
-    await fs.writeFile(promptFile, fullPrompt, "utf-8");
-
-    const escapeShell = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
-    const shellCmd = `cat ${escapeShell(promptFile)} | ${mediumConfig.command} ${args.map(escapeShell).join(" ")}`;
-
-    console.error(`[${logLabel}] executing: ${shellCmd.slice(0, 300)}...`);
-
-    try {
-      const result = await runSubprocess(
-        "bash",
-        ["-c", shellCmd],
-        { cwd: this.deps.cwd, timeout: 600_000 },
-      );
-
-      if (result.stdout.length > 0) {
-        const preview = result.stdout.length > 2000
-          ? result.stdout.slice(0, 2000) + `\n... (${result.stdout.length} chars total)`
-          : result.stdout;
-        console.error(`[${logLabel}] output:\n${preview}\n`);
-      }
-
-      if (result.stderr.length > 0) {
-        console.error(`[${logLabel}] stderr: ${result.stderr.slice(0, 500)}`);
-      }
-
-      return result;
-    } finally {
-      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
-    }
   }
 
   /**
@@ -1664,7 +1467,7 @@ export class CommissionRunnerService {
     const conductorResult = await runConductor(
       outputContents.join("\n\n"),
       conductorConfig,
-      this.deps.mediumRegistry,
+      this.deps.mediumExecutor,
       stroke.medium,
       this.deps.cwd,
       this.deps.projectPath,
@@ -1689,20 +1492,6 @@ export class CommissionRunnerService {
 
     console.error(`[conductor] Rule matched but target stroke '${conductorResult.nextStroke}' not found`);
     return undefined;
-  }
-
-  /**
-   * permission_mode に基づく許可ツールリストを返す。
-   */
-  private resolvePermissionModeTools(mode: "readonly" | "edit" | "full"): string[] {
-    switch (mode) {
-      case "readonly":
-        return ["Read", "Glob", "Grep"];
-      case "edit":
-        return ["Edit", "Write", "Read", "Glob", "Grep"];
-      case "full":
-        return ["Edit", "Write", "Read", "Glob", "Grep", "Bash"];
-    }
   }
 
   /**

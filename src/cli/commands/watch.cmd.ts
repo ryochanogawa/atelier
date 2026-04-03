@@ -17,7 +17,7 @@ import { TaskStoreAdapter } from "../../adapters/config/task-store.adapter.js";
 import { TaskQueue, type Task } from "../../domain/models/task.model.js";
 import { CommissionRunUseCase } from "../../application/use-cases/run-commission.use-case.js";
 import type { ConfigPort, VcsPort, LoggerPort } from "../../application/use-cases/run-commission.use-case.js";
-import type { MediumRegistry } from "../../application/services/commission-runner.service.js";
+import { createMediumExecutor } from "../factories/medium.factory.js";
 import type { StudioConfig, MediumConfig } from "../../shared/types.js";
 import { createEventBus } from "../../infrastructure/event-bus/event-emitter.js";
 import { readTextFile } from "../../infrastructure/fs/file-system.js";
@@ -142,24 +142,6 @@ function createLoggerPort(): LoggerPort {
 }
 
 /**
- * MediumRegistry を構築する。
- */
-async function createMediumRegistry(projectPath: string): Promise<MediumRegistry> {
-  const configPort = createConfigPort();
-  const mediaConfig = await configPort.loadMediaConfig(projectPath);
-
-  return {
-    getCommand(mediumName: string) {
-      const config = mediaConfig[mediumName];
-      return config ? { command: config.command, args: config.args } : undefined;
-    },
-    listMedia() {
-      return Object.keys(mediaConfig);
-    },
-  };
-}
-
-/**
  * 1つのタスクを実行する。
  */
 async function executeOneTask(
@@ -174,14 +156,14 @@ async function executeOneTask(
   try {
     if (task.commission) {
       // Commission 経由実行
-      const mediumRegistry = await createMediumRegistry(projectPath);
+      const mediumExecutor = createMediumExecutor();
       const eventBus = createEventBus();
       const vcsPort = createVcsPort();
       const useCase = new CommissionRunUseCase(
         createConfigPort(),
         vcsPort,
         createLoggerPort(),
-        mediumRegistry,
+        mediumExecutor,
         eventBus,
       );
 

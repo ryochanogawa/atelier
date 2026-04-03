@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { MediumRequest } from "../../../src/adapters/medium/types.js";
+import type { MediumExecuteRequest } from "../../../src/domain/ports/medium.port.js";
 
 // execa モック
 vi.mock("execa", () => {
@@ -12,7 +12,7 @@ import { GeminiAdapter } from "../../../src/adapters/medium/gemini.adapter.js";
 
 const mockExeca = vi.mocked(execa);
 
-function makeRequest(overrides: Partial<MediumRequest> = {}): MediumRequest {
+function makeRequest(overrides: Partial<MediumExecuteRequest> = {}): MediumExecuteRequest {
   return {
     prompt: "Explain this code",
     workingDirectory: "/tmp",

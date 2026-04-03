@@ -19,7 +19,7 @@ import { ManageBranchesUseCase } from "../../application/use-cases/manage-branch
 import { DirectRunUseCase } from "../../application/use-cases/direct-run.use-case.js";
 import { CommissionRunUseCase } from "../../application/use-cases/run-commission.use-case.js";
 import type { ConfigPort, VcsPort, LoggerPort } from "../../application/use-cases/run-commission.use-case.js";
-import type { MediumRegistry } from "../../application/services/commission-runner.service.js";
+import { createMediumExecutor } from "../factories/medium.factory.js";
 import type { StudioConfig, MediumConfig } from "../../shared/types.js";
 import { createEventBus } from "../../infrastructure/event-bus/event-emitter.js";
 import { readTextFile, listFiles, fileExists } from "../../infrastructure/fs/file-system.js";
@@ -108,24 +108,6 @@ function createBranchLoggerPort(): LoggerPort {
     error: (msg: string) => console.error(`[ERROR] ${msg}`),
     debug: (msg: string) => {
       if (process.env.DEBUG) console.debug(`[DEBUG] ${msg}`);
-    },
-  };
-}
-
-/**
- * MediumRegistry を構築する（branch コマンド用）
- */
-async function createBranchMediumRegistry(projectPath: string): Promise<MediumRegistry> {
-  const configPort = createBranchConfigPort();
-  const mediaConfig = await configPort.loadMediaConfig(projectPath);
-
-  return {
-    getCommand(mediumName: string) {
-      const config = mediaConfig[mediumName];
-      return config ? { command: config.command, args: config.args } : undefined;
-    },
-    listMedia() {
-      return Object.keys(mediaConfig);
     },
   };
 }
@@ -329,7 +311,7 @@ export function createBranchCommand(): Command {
           spinner.text = `Commission '${commissionName}' を worktree 内で再実行中...`;
 
           const configPort = createBranchConfigPort();
-          const mediumRegistry = await createBranchMediumRegistry(projectPath);
+          const mediumExecutor = createMediumExecutor();
           const eventBus = createEventBus();
           const vcsPort = createBranchNoopVcsPort();
           const loggerPort = createBranchLoggerPort();
@@ -338,7 +320,7 @@ export function createBranchCommand(): Command {
             configPort,
             vcsPort,
             loggerPort,
-            mediumRegistry,
+            mediumExecutor,
             eventBus,
           );
 

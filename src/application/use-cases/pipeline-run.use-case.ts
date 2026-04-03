@@ -6,7 +6,7 @@
 import { CommissionRunUseCase } from "./run-commission.use-case.js";
 import { CreatePRUseCase } from "./create-pr.use-case.js";
 import type { ConfigPort, VcsPort, LoggerPort } from "./run-commission.use-case.js";
-import type { MediumRegistry } from "../services/commission-runner.service.js";
+import type { MediumExecutor } from "../ports/medium-executor.port.js";
 import type { TypedEventEmitter, AtelierEvents } from "../../infrastructure/event-bus/event-emitter.js";
 import type { PullRequestPort } from "../../domain/ports/pull-request.port.js";
 import type { RunResultDto } from "../dto/run-result.dto.js";
@@ -32,7 +32,7 @@ export class PipelineRunUseCase {
     private readonly configPort: ConfigPort,
     private readonly vcsPort: VcsPort,
     private readonly loggerPort: LoggerPort,
-    private readonly mediumRegistry: MediumRegistry,
+    private readonly mediumExecutor: MediumExecutor,
     private readonly eventBus: TypedEventEmitter<AtelierEvents>,
     private readonly pullRequest?: PullRequestPort,
   ) {
@@ -40,7 +40,7 @@ export class PipelineRunUseCase {
       configPort,
       vcsPort,
       loggerPort,
-      mediumRegistry,
+      mediumExecutor,
       eventBus,
     );
 

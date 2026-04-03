@@ -7,7 +7,7 @@ import path from "node:path";
 import { TaskQueue, createTask, type Task, type CreateTaskParams } from "../../domain/models/task.model.js";
 import { TaskStoreAdapter } from "../../adapters/config/task-store.adapter.js";
 import { CommissionRunUseCase, type ConfigPort, type VcsPort, type LoggerPort } from "./run-commission.use-case.js";
-import type { MediumRegistry } from "../services/commission-runner.service.js";
+import type { MediumExecutor } from "../ports/medium-executor.port.js";
 import type { TypedEventEmitter, AtelierEvents } from "../../infrastructure/event-bus/event-emitter.js";
 import { resolveAtelierPath } from "../../shared/utils.js";
 import { REQUIREMENTS_DIR } from "../../shared/constants.js";
@@ -76,7 +76,7 @@ export class RunQueueUseCase {
   private readonly configPort: ConfigPort;
   private readonly vcsPort: VcsPort;
   private readonly loggerPort: LoggerPort;
-  private readonly mediumRegistry: MediumRegistry;
+  private readonly mediumExecutor: MediumExecutor;
   private readonly eventBus: TypedEventEmitter<AtelierEvents>;
 
   constructor(
@@ -84,14 +84,14 @@ export class RunQueueUseCase {
     configPort: ConfigPort,
     vcsPort: VcsPort,
     loggerPort: LoggerPort,
-    mediumRegistry: MediumRegistry,
+    mediumExecutor: MediumExecutor,
     eventBus: TypedEventEmitter<AtelierEvents>,
   ) {
     this.store = new TaskStoreAdapter(projectPath);
     this.configPort = configPort;
     this.vcsPort = vcsPort;
     this.loggerPort = loggerPort;
-    this.mediumRegistry = mediumRegistry;
+    this.mediumExecutor = mediumExecutor;
     this.eventBus = eventBus;
   }
 
@@ -121,7 +121,7 @@ export class RunQueueUseCase {
         this.configPort,
         this.vcsPort,
         this.loggerPort,
-        this.mediumRegistry,
+        this.mediumExecutor,
         this.eventBus,
       );
       const result = await useCase.execute(commissionName, projectPath, {

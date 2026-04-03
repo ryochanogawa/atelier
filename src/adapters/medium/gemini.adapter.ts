@@ -8,9 +8,9 @@ import { execa, type ResultPromise } from "execa";
 import type {
   MediumPort,
   MediumAvailability,
-  MediumRequest,
-  MediumResponse,
-} from "./types.js";
+  MediumExecuteRequest,
+  MediumExecuteResponse,
+} from "../../domain/ports/medium.port.js";
 
 export class GeminiAdapter implements MediumPort {
   readonly name = "gemini";
@@ -31,7 +31,7 @@ export class GeminiAdapter implements MediumPort {
     }
   }
 
-  async execute(request: MediumRequest): Promise<MediumResponse> {
+  async execute(request: MediumExecuteRequest): Promise<MediumExecuteResponse> {
     const args = this.buildArgs(request);
     const startTime = Date.now();
 
@@ -65,7 +65,7 @@ export class GeminiAdapter implements MediumPort {
     }
   }
 
-  private buildArgs(request: MediumRequest): string[] {
+  private buildArgs(request: MediumExecuteRequest): string[] {
     // プロンプトは stdin から読み取るため、引数には含めない
     const args: string[] = [];
 
@@ -85,7 +85,7 @@ export class GeminiAdapter implements MediumPort {
     stderr: string,
     exitCode: number,
     durationMs: number,
-  ): MediumResponse {
+  ): MediumExecuteResponse {
     let content = stdout.trim();
     let structured: Record<string, unknown> | undefined;
 

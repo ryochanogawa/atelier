@@ -6,7 +6,7 @@
 import type { Issue, IssueTrackerPort } from "../../domain/ports/issue-tracker.port.js";
 import { CommissionRunUseCase } from "./run-commission.use-case.js";
 import type { ConfigPort, VcsPort, LoggerPort } from "./run-commission.use-case.js";
-import type { MediumRegistry } from "../services/commission-runner.service.js";
+import type { MediumExecutor } from "../ports/medium-executor.port.js";
 import type { TypedEventEmitter, AtelierEvents } from "../../infrastructure/event-bus/event-emitter.js";
 import type { RunResultDto } from "../dto/run-result.dto.js";
 import { formatDuration } from "../../shared/utils.js";
@@ -19,14 +19,14 @@ export class RunIssueUseCase {
     private readonly configPort: ConfigPort,
     private readonly vcsPort: VcsPort,
     private readonly loggerPort: LoggerPort,
-    private readonly mediumRegistry: MediumRegistry,
+    private readonly mediumExecutor: MediumExecutor,
     private readonly eventBus: TypedEventEmitter<AtelierEvents>,
   ) {
     this.commissionRunUseCase = new CommissionRunUseCase(
       configPort,
       vcsPort,
       loggerPort,
-      mediumRegistry,
+      mediumExecutor,
       eventBus,
     );
   }

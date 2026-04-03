@@ -1,9 +1,9 @@
 export type {
   MediumPort,
   MediumAvailability,
-  MediumRequest,
-  MediumResponse,
-} from "./types.js";
+  MediumExecuteRequest,
+  MediumExecuteResponse,
+} from "../../domain/ports/medium.port.js";
 export { ClaudeCodeAdapter } from "./claude-code.adapter.js";
 export { CodexAdapter } from "./codex.adapter.js";
 export { GeminiAdapter } from "./gemini.adapter.js";

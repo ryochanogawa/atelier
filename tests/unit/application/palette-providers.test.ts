@@ -11,36 +11,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ---- vi.hoisted でモック関数を先に定義 ----
-const mockRunSubprocess = vi.hoisted(() => vi.fn());
 const mockFileExists = vi.hoisted(() => vi.fn());
 const mockReadTextFile = vi.hoisted(() => vi.fn());
-const mockMkdtemp = vi.hoisted(() => vi.fn());
-const mockWriteFile = vi.hoisted(() => vi.fn());
-const mockRm = vi.hoisted(() => vi.fn());
 
 // ---- インフラレイヤーのモック ----
-vi.mock("../../../src/infrastructure/process/subprocess.js", () => ({
-  runSubprocess: mockRunSubprocess,
-}));
-
 vi.mock("../../../src/infrastructure/fs/file-system.js", () => ({
   fileExists: mockFileExists,
   readTextFile: mockReadTextFile,
-}));
-
-vi.mock("node:fs/promises", () => ({
-  default: {
-    mkdtemp: mockMkdtemp,
-    writeFile: mockWriteFile,
-    rm: mockRm,
-  },
 }));
 
 import { CommissionRunnerService } from "../../../src/application/services/commission-runner.service.js";
 import { TypedEventEmitter } from "../../../src/infrastructure/event-bus/event-emitter.js";
 import type { AtelierEvents } from "../../../src/infrastructure/event-bus/event-emitter.js";
 import type { CommissionDefinition, RunOptions, PaletteProviderConfig } from "../../../src/shared/types.js";
-import { createMockMediumRegistry } from "../../helpers/mock-medium.js";
+import { createMockMediumExecutor } from "../../helpers/mock-medium.js";
 
 // ---- テスト用ファクトリ ----
 
@@ -50,7 +34,7 @@ function createRunner(opts?: {
   paletteProviders?: Record<string, PaletteProviderConfig>;
 }) {
   const eventBus = new TypedEventEmitter<AtelierEvents>();
-  const mediumRegistry = createMockMediumRegistry(
+  const mediumExecutor = createMockMediumExecutor(
     opts?.mediumMap ?? new Map([
       ["test-medium", "mock response"],
       ["claude-code", "mock response"],
@@ -59,7 +43,7 @@ function createRunner(opts?: {
   );
   return new CommissionRunnerService({
     eventBus,
-    mediumRegistry,
+    mediumExecutor,
     defaultMedium: opts?.defaultMedium ?? "test-medium",
     cwd: "/tmp/test-project",
     projectPath: "/tmp/test-project",

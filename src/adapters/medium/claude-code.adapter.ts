@@ -8,9 +8,9 @@ import { execa, type ResultPromise } from "execa";
 import type {
   MediumPort,
   MediumAvailability,
-  MediumRequest,
-  MediumResponse,
-} from "./types.js";
+  MediumExecuteRequest,
+  MediumExecuteResponse,
+} from "../../domain/ports/medium.port.js";
 import { runSubprocess } from "../../infrastructure/process/subprocess.js";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -35,7 +35,7 @@ export class ClaudeCodeAdapter implements MediumPort {
     }
   }
 
-  async execute(request: MediumRequest): Promise<MediumResponse> {
+  async execute(request: MediumExecuteRequest): Promise<MediumExecuteResponse> {
     // 読み取りツールが要求されている場合は stdin パイプ + allowedTools 方式を使う
     if (request.allowReadTools) {
       return this.executeWithReadTools(request);
@@ -45,11 +45,13 @@ export class ClaudeCodeAdapter implements MediumPort {
     const startTime = Date.now();
 
     try {
+      // --allowedTools 等の可変長引数がプロンプトを飲み込む問題を回避するため、
+      // プロンプトは常に stdin 経由で渡す
       this.activeProcess = execa("claude", args, {
         cwd: request.workingDirectory,
         timeout: request.timeoutMs,
         reject: false,
-        stdin: "ignore",
+        input: request.prompt,
       });
 
       const result = await this.activeProcess;
@@ -77,7 +79,7 @@ export class ClaudeCodeAdapter implements MediumPort {
    * 読み取りツール (Read/Glob/Grep/Bash) を許可した実行。
    * プロンプトを一時ファイルに書き出し、cat | claude -p --allowedTools ... で実行する。
    */
-  private async executeWithReadTools(request: MediumRequest): Promise<MediumResponse> {
+  private async executeWithReadTools(request: MediumExecuteRequest): Promise<MediumExecuteResponse> {
     const startTime = Date.now();
 
     // プロンプトを一時ファイルに書き出し
@@ -121,18 +123,22 @@ export class ClaudeCodeAdapter implements MediumPort {
     }
   }
 
-  private buildArgs(request: MediumRequest): string[] {
+  private buildArgs(request: MediumExecuteRequest): string[] {
+    // プロンプトは stdin 経由で渡すため、ここでは含めない
     const args: string[] = ["--print"];
 
     if (request.systemPrompt) {
       args.push("--system-prompt", request.systemPrompt);
     }
 
+    // --allowedTools は Claude Code 固有のフラグ
+    if (request.allowedTools && request.allowedTools.length > 0) {
+      args.push("--allowedTools", ...request.allowedTools);
+    }
+
     if (request.extraArgs) {
       args.push(...request.extraArgs);
     }
-
-    args.push(request.prompt);
 
     return args;
   }
@@ -142,7 +148,7 @@ export class ClaudeCodeAdapter implements MediumPort {
     stderr: string,
     exitCode: number,
     durationMs: number,
-  ): MediumResponse {
+  ): MediumExecuteResponse {
     let content = stdout;
 
     // JSON出力の場合はパースを試みる

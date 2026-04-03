@@ -12,41 +12,30 @@ import { AggregateEvaluator } from "../../../src/domain/services/aggregate-evalu
 import { parseStatusTag } from "../../../src/domain/services/conductor-parser.js";
 import { createCritique } from "../../../src/domain/models/critique.model.js";
 import { CritiqueVerdict } from "../../../src/domain/value-objects/critique-verdict.vo.js";
-import type { MediumRegistry } from "../../../src/application/services/commission-runner.service.js";
+import type { MediumExecutor } from "../../../src/application/ports/medium-executor.port.js";
 
 // --- helpers ---
 
 /**
- * subprocess をモックする MediumRegistry を作成する。
+ * MediumExecutor モックを作成する。
  * AI レスポンスとして返す文字列を指定する。
  */
-function createMockRegistry(aiResponse: string): MediumRegistry {
+function createMockMediumExecutor(aiResponse: string): MediumExecutor {
   return {
-    getCommand(_name: string) {
-      return { command: "echo", args: [aiResponse] };
+    async execute() {
+      return {
+        content: aiResponse,
+        exitCode: 0,
+        durationMs: 100,
+        rawStdout: aiResponse,
+        rawStderr: "",
+      };
     },
     listMedia() {
-      return ["mock"];
+      return ["claude-code"];
     },
   };
 }
-
-/**
- * subprocess (runSubprocess) をモックし、指定の stdout を返す。
- */
-function mockSubprocess(stdout: string) {
-  return vi.fn().mockResolvedValue({
-    stdout,
-    stderr: "",
-    exitCode: 0,
-    duration: 100,
-  });
-}
-
-// runSubprocess をモジュールレベルでモック
-vi.mock("../../../src/infrastructure/process/subprocess.js", () => ({
-  runSubprocess: vi.fn(),
-}));
 
 // ファイルシステム系もモック（palette 読み込み回避）
 vi.mock("../../../src/infrastructure/fs/file-system.js", () => ({
@@ -76,21 +65,12 @@ describe("7.2 Conductor + Critique 連携", () => {
   it("approved -> CritiqueService.shouldRetry() は false を返す", async () => {
     const aiResponse = "結果は問題ありません。[STATUS: approved]";
 
-    // subprocess モックを設定
-    const { runSubprocess } = await import("../../../src/infrastructure/process/subprocess.js");
-    (runSubprocess as ReturnType<typeof vi.fn>).mockResolvedValue({
-      stdout: aiResponse,
-      stderr: "",
-      exitCode: 0,
-      duration: 100,
-    });
-
-    const registry = createMockRegistry(aiResponse);
+    const executor = createMockMediumExecutor(aiResponse);
     const result = await runConductor(
       "stroke output text",
       conductorConfig,
-      registry,
-      "mock",
+      executor,
+      "claude-code",
       "/tmp",
       "/tmp/project",
     );
@@ -111,20 +91,12 @@ describe("7.2 Conductor + Critique 連携", () => {
   it("needs_fix -> shouldRetry(retries=0, max=3) は true を返す", async () => {
     const aiResponse = "修正が必要です。[STATUS: needs_fix]";
 
-    const { runSubprocess } = await import("../../../src/infrastructure/process/subprocess.js");
-    (runSubprocess as ReturnType<typeof vi.fn>).mockResolvedValue({
-      stdout: aiResponse,
-      stderr: "",
-      exitCode: 0,
-      duration: 100,
-    });
-
-    const registry = createMockRegistry(aiResponse);
+    const executor = createMockMediumExecutor(aiResponse);
     const result = await runConductor(
       "stroke output text",
       conductorConfig,
-      registry,
-      "mock",
+      executor,
+      "claude-code",
       "/tmp",
       "/tmp/project",
     );
@@ -157,20 +129,12 @@ describe("7.2 Conductor + Critique 連携", () => {
   it("rejected -> shouldRetry は false を返す", async () => {
     const aiResponse = "致命的な問題があります。[STATUS: rejected]";
 
-    const { runSubprocess } = await import("../../../src/infrastructure/process/subprocess.js");
-    (runSubprocess as ReturnType<typeof vi.fn>).mockResolvedValue({
-      stdout: aiResponse,
-      stderr: "",
-      exitCode: 0,
-      duration: 100,
-    });
-
-    const registry = createMockRegistry(aiResponse);
+    const executor = createMockMediumExecutor(aiResponse);
     const result = await runConductor(
       "stroke output text",
       conductorConfig,
-      registry,
-      "mock",
+      executor,
+      "claude-code",
       "/tmp",
       "/tmp/project",
     );

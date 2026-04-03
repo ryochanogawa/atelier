@@ -4,16 +4,13 @@
  */
 
 import path from "node:path";
-import fs from "node:fs/promises";
-import os from "node:os";
 import { parse as parseYaml } from "yaml";
 import { parseStatusTag } from "../../domain/services/conductor-parser.js";
-import { runSubprocess } from "../../infrastructure/process/subprocess.js";
 import { readTextFile, fileExists } from "../../infrastructure/fs/file-system.js";
 import { resolveAtelierPath } from "../../shared/utils.js";
 import { PALETTES_DIR } from "../../shared/constants.js";
 import { getBuiltinPalettePath } from "../../builtin/index.js";
-import type { MediumRegistry } from "./commission-runner.service.js";
+import type { MediumExecutor } from "../ports/medium-executor.port.js";
 
 export interface ConductorConfig {
   palette?: string;       // デフォルト: "conductor"
@@ -42,7 +39,7 @@ interface RawPalette {
 export async function runConductor(
   strokeResult: string,
   conductorConfig: ConductorConfig,
-  mediumRegistry: MediumRegistry,
+  mediumExecutor: MediumExecutor,
   defaultMedium: string,
   cwd: string,
   projectPath: string,
@@ -58,10 +55,22 @@ export async function runConductor(
   const userInstruction = `以下はストロークの実行結果です。内容を評価し、[STATUS: xxx] 形式でステータスを判定してください。\n\n${strokeResult}`;
   const fullPrompt = `[Persona]\n${persona}\n\n${userInstruction}`;
 
-  // 3. Medium 呼び出し
-  const mediumConfig = mediumRegistry.getCommand(defaultMedium);
-  if (!mediumConfig) {
-    // Medium が見つからない場合はデフォルト approved で返す
+  // 3. MediumExecutor 経由で呼び出し
+  let rawResponse = "";
+  try {
+    const result = await mediumExecutor.execute({
+      medium: defaultMedium,
+      prompt: fullPrompt,
+      workingDirectory: cwd,
+      allowEdit: false,
+      timeoutMs: 300_000,
+    });
+
+    if (result.exitCode === 0) {
+      rawResponse = result.rawStdout;
+    }
+  } catch {
+    // Medium 実行失敗時はデフォルト approved で返す
     return {
       status: "approved",
       nextStroke: findNextStroke(conductorConfig.rules, "approved"),
@@ -69,40 +78,13 @@ export async function runConductor(
     };
   }
 
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "atelier-conductor-"));
-  const promptFile = path.join(tmpDir, "prompt.md");
-  await fs.writeFile(promptFile, fullPrompt, "utf-8");
-
-  const args = [...mediumConfig.args];
-  if (!args.includes("--print") && !args.includes("-p")) {
-    args.unshift("-p");
-  }
-
-  const escapeShell = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
-  const shellCmd = `cat ${escapeShell(promptFile)} | ${mediumConfig.command} ${args.map(escapeShell).join(" ")}`;
-
-  let rawResponse = "";
-  try {
-    const result = await runSubprocess(
-      "bash",
-      ["-c", shellCmd],
-      { cwd, timeout: 300_000 },
-    );
-
-    if (result.exitCode === 0) {
-      rawResponse = result.stdout;
-    }
-  } finally {
-    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
-  }
-
   // 4. parseStatusTag() でステータス取得
   const parsedStatus = parseStatusTag(rawResponse);
 
-  // 6. ステータスが取得できなかった場合はデフォルトで "approved"
+  // 5. ステータスが取得できなかった場合はデフォルトで "approved"
   const status = parsedStatus ?? "approved";
 
-  // 5. rules から該当する condition を探して nextStroke を決定
+  // 6. rules から該当する condition を探して nextStroke を決定
   const nextStroke = findNextStroke(conductorConfig.rules, status);
 
   return {

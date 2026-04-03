@@ -13,7 +13,7 @@ import { CommissionRunUseCase } from "../../application/use-cases/run-commission
 import { CreatePRUseCase } from "../../application/use-cases/create-pr.use-case.js";
 import { createPRAdapter } from "../../adapters/vcs/create-pr-adapter.js";
 import type { ConfigPort, VcsPort, LoggerPort } from "../../application/use-cases/run-commission.use-case.js";
-import type { MediumRegistry } from "../../application/services/commission-runner.service.js";
+import { createMediumExecutor } from "../factories/medium.factory.js";
 import type { StudioConfig, MediumConfig, PaletteProviderConfig, NotificationConfig, RuntimeConfig } from "../../shared/types.js";
 import { createEventBus } from "../../infrastructure/event-bus/event-emitter.js";
 import { readTextFile, fileExists } from "../../infrastructure/fs/file-system.js";
@@ -210,24 +210,6 @@ function createNoopVcsPort(): VcsPort {
 }
 
 /**
- * MediumRegistry を studio.yaml から構築する。
- */
-async function createMediumRegistry(projectPath: string): Promise<MediumRegistry> {
-  const configPort = createConfigPort();
-  const mediaConfig = await configPort.loadMediaConfig(projectPath);
-
-  return {
-    getCommand(mediumName: string) {
-      const config = mediaConfig[mediumName];
-      return config ? { command: config.command, args: config.args } : undefined;
-    },
-    listMedia() {
-      return Object.keys(mediaConfig);
-    },
-  };
-}
-
-/**
  * タスク実行のコアロジック。
  * run サブコマンドとデフォルト引数の両方から呼ばれる。
  */
@@ -382,14 +364,14 @@ export async function executeTask(
     const spinner = createSpinner(`Commission '${commissionName}' でタスクを実行中...`).start();
 
     try {
-      const mediumRegistry = await createMediumRegistry(projectPath);
+      const mediumExecutor = createMediumExecutor();
       const eventBus = createEventBus();
       const vcsPort = opts.skipGit ? createNoopVcsPort() : createVcsPort(studioConfig?.worktreeDir);
       const useCase = new CommissionRunUseCase(
         configPort,
         vcsPort,
         createLoggerPort(),
-        mediumRegistry,
+        mediumExecutor,
         eventBus,
       );
 

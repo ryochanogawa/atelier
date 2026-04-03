@@ -23,7 +23,7 @@ const COLORS = {
   get text() { return getColorFn("text"); },
 } as const;
 import type { ConfigPort, VcsPort, LoggerPort } from "../../application/use-cases/run-commission.use-case.js";
-import type { MediumRegistry } from "../../application/services/commission-runner.service.js";
+import { createMediumExecutor } from "../factories/medium.factory.js";
 import type { StudioConfig, MediumConfig } from "../../shared/types.js";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
@@ -136,24 +136,6 @@ function createLoggerPort(): LoggerPort {
     error: (msg: string) => console.error(`[ERROR] ${msg}`),
     debug: (msg: string) => {
       if (process.env.DEBUG) console.debug(`[DEBUG] ${msg}`);
-    },
-  };
-}
-
-/**
- * MediumRegistry を studio.yaml から構築する。
- */
-async function createMediumRegistry(projectPath: string): Promise<MediumRegistry> {
-  const configPort = createConfigPort();
-  const mediaConfig = await configPort.loadMediaConfig(projectPath);
-
-  return {
-    getCommand(mediumName: string) {
-      const config = mediaConfig[mediumName];
-      return config ? { command: config.command, args: [...config.args] } : undefined;
-    },
-    listMedia() {
-      return Object.keys(mediaConfig);
     },
   };
 }
@@ -273,7 +255,7 @@ export function createTaskCommand(): Command {
       ).start();
 
       try {
-        const mediumRegistry = await createMediumRegistry(projectPath);
+        const mediumExecutor = createMediumExecutor();
         const eventBus = createEventBus();
 
         const useCase = new RunQueueUseCase(
@@ -281,7 +263,7 @@ export function createTaskCommand(): Command {
           createConfigPort(),
           createVcsPort(),
           createLoggerPort(),
-          mediumRegistry,
+          mediumExecutor,
           eventBus,
         );
 

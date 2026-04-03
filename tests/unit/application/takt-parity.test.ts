@@ -11,51 +11,36 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ---- vi.hoisted でモック関数を先に定義 ----
-const mockRunSubprocess = vi.hoisted(() => vi.fn());
 const mockFileExists = vi.hoisted(() => vi.fn());
 const mockReadTextFile = vi.hoisted(() => vi.fn());
-const mockMkdtemp = vi.hoisted(() => vi.fn());
-const mockWriteFile = vi.hoisted(() => vi.fn());
-const mockRm = vi.hoisted(() => vi.fn());
 
 // ---- インフラレイヤーのモック ----
-vi.mock("../../../src/infrastructure/process/subprocess.js", () => ({
-  runSubprocess: mockRunSubprocess,
-}));
-
 vi.mock("../../../src/infrastructure/fs/file-system.js", () => ({
   fileExists: mockFileExists,
   readTextFile: mockReadTextFile,
-}));
-
-vi.mock("node:fs/promises", () => ({
-  default: {
-    mkdtemp: mockMkdtemp,
-    writeFile: mockWriteFile,
-    rm: mockRm,
-  },
 }));
 
 import { CommissionRunnerService } from "../../../src/application/services/commission-runner.service.js";
 import { TypedEventEmitter } from "../../../src/infrastructure/event-bus/event-emitter.js";
 import type { AtelierEvents } from "../../../src/infrastructure/event-bus/event-emitter.js";
 import type { CommissionDefinition, RunOptions } from "../../../src/shared/types.js";
-import { createMockMediumRegistry } from "../../helpers/mock-medium.js";
+import { createMockMediumExecutor } from "../../helpers/mock-medium.js";
 
 // ---- テスト用ファクトリ ----
 
 function createRunner() {
   const eventBus = new TypedEventEmitter<AtelierEvents>();
-  const mediumRegistry = createMockMediumRegistry(
+  const mediumExecutor = createMockMediumExecutor(
     new Map([["test-medium", "mock response"]]),
   );
-  return new CommissionRunnerService({
+  const runner = new CommissionRunnerService({
     eventBus,
-    mediumRegistry,
+    mediumExecutor,
     defaultMedium: "test-medium",
     cwd: "/tmp/test-project",
     projectPath: "/tmp/test-project",
   });
+  return { runner, mediumExecutor, eventBus };
 }
 
 const dryRunOptions: RunOptions = { dryRun: true };
@@ -66,26 +51,16 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockFileExists.mockResolvedValue(false);
   mockReadTextFile.mockResolvedValue("");
-  mockRunSubprocess.mockResolvedValue({
-    stdout: "mock output",
-    stderr: "",
-    exitCode: 0,
-    duration: 100,
-  });
-  mockMkdtemp.mockResolvedValue("/tmp/atelier-test");
-  mockWriteFile.mockResolvedValue(undefined);
-  mockRm.mockResolvedValue(undefined);
 });
 
 // ==== 1. initial_stroke テスト ====
 
 describe("initial_stroke", () => {
   it("指定されたstrokeから実行を開始する", async () => {
-    const runner = createRunner();
+    const { runner, eventBus } = createRunner();
     const strokeNames: string[] = [];
 
     // イベントを監視して実行されたstroke名を記録
-    const eventBus = (runner as any).deps.eventBus;
     eventBus.on("stroke:start", (data: { strokeName: string }) => {
       strokeNames.push(data.strokeName);
     });
@@ -122,10 +97,9 @@ describe("initial_stroke", () => {
   });
 
   it("initial_stroke未指定時は先頭から実行（後方互換）", async () => {
-    const runner = createRunner();
+    const { runner, eventBus } = createRunner();
     const strokeNames: string[] = [];
 
-    const eventBus = (runner as any).deps.eventBus;
     eventBus.on("stroke:start", (data: { strokeName: string }) => {
       strokeNames.push(data.strokeName);
     });
@@ -157,14 +131,8 @@ describe("initial_stroke", () => {
 // ==== 2. permission_mode テスト ====
 
 describe("permission_mode", () => {
-  it("readonly → 読み取りツールのみ許可", async () => {
-    const runner = createRunner();
-    let capturedShellCmd = "";
-
-    mockRunSubprocess.mockImplementation(async (_cmd: string, args: string[]) => {
-      capturedShellCmd = args[1] ?? "";
-      return { stdout: "output", stderr: "", exitCode: 0, duration: 100 };
-    });
+  it("readonly → permissionMode が 'readonly' で MediumExecutor に渡される", async () => {
+    const { runner, mediumExecutor } = createRunner();
 
     const commission: CommissionDefinition = {
       name: "test",
@@ -181,23 +149,12 @@ describe("permission_mode", () => {
 
     await runner.execute(commission, "run-1", { dryRun: false });
 
-    // readonly モードでは Read, Glob, Grep のみ
-    expect(capturedShellCmd).toContain("Read");
-    expect(capturedShellCmd).toContain("Glob");
-    expect(capturedShellCmd).toContain("Grep");
-    expect(capturedShellCmd).not.toContain("Edit");
-    expect(capturedShellCmd).not.toContain("Write");
-    expect(capturedShellCmd).not.toContain("Bash");
+    expect(mediumExecutor.calls.length).toBe(1);
+    expect(mediumExecutor.calls[0].permissionMode).toBe("readonly");
   });
 
-  it("full → 全ツール許可", async () => {
-    const runner = createRunner();
-    let capturedShellCmd = "";
-
-    mockRunSubprocess.mockImplementation(async (_cmd: string, args: string[]) => {
-      capturedShellCmd = args[1] ?? "";
-      return { stdout: "output", stderr: "", exitCode: 0, duration: 100 };
-    });
+  it("full → permissionMode が 'full' で MediumExecutor に渡される", async () => {
+    const { runner, mediumExecutor } = createRunner();
 
     const commission: CommissionDefinition = {
       name: "test",
@@ -214,20 +171,12 @@ describe("permission_mode", () => {
 
     await runner.execute(commission, "run-1", { dryRun: false });
 
-    // full モードでは全ツール許可
-    expect(capturedShellCmd).toContain("Bash");
-    expect(capturedShellCmd).toContain("Edit");
-    expect(capturedShellCmd).toContain("Write");
+    expect(mediumExecutor.calls.length).toBe(1);
+    expect(mediumExecutor.calls[0].permissionMode).toBe("full");
   });
 
-  it("permission_mode未指定 + allow_edit: true → 従来通り", async () => {
-    const runner = createRunner();
-    let capturedShellCmd = "";
-
-    mockRunSubprocess.mockImplementation(async (_cmd: string, args: string[]) => {
-      capturedShellCmd = args[1] ?? "";
-      return { stdout: "output", stderr: "", exitCode: 0, duration: 100 };
-    });
+  it("permission_mode未指定 + allow_edit: true → allowEdit が true で渡される", async () => {
+    const { runner, mediumExecutor } = createRunner();
 
     const commission: CommissionDefinition = {
       name: "test",
@@ -244,10 +193,8 @@ describe("permission_mode", () => {
 
     await runner.execute(commission, "run-1", { dryRun: false });
 
-    // allow_edit: true の従来動作
-    expect(capturedShellCmd).toContain("Edit");
-    expect(capturedShellCmd).toContain("Write");
-    expect(capturedShellCmd).toContain("Bash");
+    expect(mediumExecutor.calls.length).toBe(1);
+    expect(mediumExecutor.calls[0].allowEdit).toBe(true);
   });
 });
 
@@ -255,16 +202,8 @@ describe("permission_mode", () => {
 
 describe("quality_gates", () => {
   it("Canvas上の値がチェックされる（成功と失敗）", async () => {
-    const runner = createRunner();
+    const { runner } = createRunner();
     const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    // Canvas に tests_pass=true, coverage=fail を設定
-    mockRunSubprocess.mockResolvedValue({
-      stdout: "mock output",
-      stderr: "",
-      exitCode: 0,
-      duration: 100,
-    });
 
     const commission: CommissionDefinition = {
       name: "test",
@@ -309,17 +248,7 @@ describe("quality_gates", () => {
 
 describe("appendix", () => {
   it("transition発火時に次strokeのinstructionに追加テキストが注入される", async () => {
-    const runner = createRunner();
-    let lastPromptContent = "";
-
-    mockRunSubprocess.mockImplementation(async (_cmd: string, args: string[]) => {
-      return { stdout: "mock output", stderr: "", exitCode: 0, duration: 100 };
-    });
-
-    // writeFile をフックしてプロンプト内容をキャプチャ
-    mockWriteFile.mockImplementation(async (_path: string, content: string) => {
-      lastPromptContent = content;
-    });
+    const { runner, mediumExecutor } = createRunner();
 
     const commission: CommissionDefinition = {
       name: "test",
@@ -350,7 +279,9 @@ describe("appendix", () => {
     await runner.execute(commission, "run-1", { dryRun: false });
 
     // stroke-2 のプロンプトに appendix が含まれている
-    expect(lastPromptContent).toContain("ADDITIONAL CONTEXT: Please also consider edge cases.");
-    expect(lastPromptContent).toContain("Second task");
+    expect(mediumExecutor.calls.length).toBeGreaterThanOrEqual(2);
+    const stroke2Prompt = mediumExecutor.calls[1].prompt;
+    expect(stroke2Prompt).toContain("ADDITIONAL CONTEXT: Please also consider edge cases.");
+    expect(stroke2Prompt).toContain("Second task");
   });
 });

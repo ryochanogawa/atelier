@@ -7,19 +7,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ---- vi.hoisted でモック関数を先に定義（vitest ホイスティング対策）----
-const mockRunSubprocess = vi.hoisted(() => vi.fn());
 const mockFileExists = vi.hoisted(() => vi.fn());
 const mockReadTextFile = vi.hoisted(() => vi.fn());
-const mockMkdtemp = vi.hoisted(() => vi.fn());
 const mockWriteFile = vi.hoisted(() => vi.fn());
-const mockRm = vi.hoisted(() => vi.fn());
 const mockMkdir = vi.hoisted(() => vi.fn());
 
 // ---- インフラレイヤーのモック ----
-vi.mock("../../../src/infrastructure/process/subprocess.js", () => ({
-  runSubprocess: mockRunSubprocess,
-}));
-
 vi.mock("../../../src/infrastructure/fs/file-system.js", () => ({
   fileExists: mockFileExists,
   readTextFile: mockReadTextFile,
@@ -27,9 +20,7 @@ vi.mock("../../../src/infrastructure/fs/file-system.js", () => ({
 
 vi.mock("node:fs/promises", () => ({
   default: {
-    mkdtemp: mockMkdtemp,
     writeFile: mockWriteFile,
-    rm: mockRm,
     mkdir: mockMkdir,
   },
 }));
@@ -38,22 +29,23 @@ import { CommissionRunnerService } from "../../../src/application/services/commi
 import { TypedEventEmitter } from "../../../src/infrastructure/event-bus/event-emitter.js";
 import type { AtelierEvents } from "../../../src/infrastructure/event-bus/event-emitter.js";
 import type { CommissionDefinition, RunOptions } from "../../../src/shared/types.js";
-import { createMockMediumRegistry } from "../../helpers/mock-medium.js";
+import { createMockMediumExecutor } from "../../helpers/mock-medium.js";
 
 // ---- テスト用ファクトリ ----
 
-function createRunner() {
+function createRunner(responseContent = "mock response") {
   const eventBus = new TypedEventEmitter<AtelierEvents>();
-  const mediumRegistry = createMockMediumRegistry(
-    new Map([["test-medium", "mock response"]]),
+  const mediumExecutor = createMockMediumExecutor(
+    new Map([["test-medium", responseContent]]),
   );
-  return new CommissionRunnerService({
+  const runner = new CommissionRunnerService({
     eventBus,
-    mediumRegistry,
+    mediumExecutor,
     defaultMedium: "test-medium",
     cwd: "/tmp/test-project",
     projectPath: "/tmp/test-project",
   });
+  return { runner, mediumExecutor };
 }
 
 const defaultRunOptions: RunOptions = { dryRun: false };
@@ -64,15 +56,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockFileExists.mockResolvedValue(false);
   mockReadTextFile.mockResolvedValue("");
-  mockRunSubprocess.mockResolvedValue({
-    stdout: "mock output",
-    stderr: "",
-    exitCode: 0,
-    duration: 100,
-  });
-  mockMkdtemp.mockResolvedValue("/tmp/atelier-test-123");
   mockWriteFile.mockResolvedValue(undefined);
-  mockRm.mockResolvedValue(undefined);
   mockMkdir.mockResolvedValue(undefined);
 });
 
@@ -86,12 +70,7 @@ afterEach(() => {
 
 describe("{{task}} 自動注入", () => {
   it("RunOptions.task が Canvas に自動セットされ instruction で展開される", async () => {
-    const runner = createRunner();
-
-    const writtenContents: string[] = [];
-    mockWriteFile.mockImplementation(async (_path: string, content: string) => {
-      writtenContents.push(content);
-    });
+    const { runner, mediumExecutor } = createRunner();
 
     const commission: CommissionDefinition = {
       name: "task-inject-test",
@@ -114,20 +93,15 @@ describe("{{task}} 自動注入", () => {
 
     await runner.execute(commission, "run-task", options);
 
-    // プロンプトファイルに {{task}} が展開された内容が書き込まれている
-    const promptContent = writtenContents.find((c) => c.includes("タスク:"));
+    // MediumExecutor に渡されたプロンプトに {{task}} が展開された内容が含まれる
+    const promptContent = mediumExecutor.calls.find((c) => c.prompt.includes("タスク:"));
     expect(promptContent).toBeDefined();
-    expect(promptContent).toContain("タスク: 新機能を実装する");
-    expect(promptContent).not.toContain("{{task}}");
+    expect(promptContent!.prompt).toContain("タスク: 新機能を実装する");
+    expect(promptContent!.prompt).not.toContain("{{task}}");
   });
 
   it("RunOptions.task が未指定の場合は {{task}} が未展開のまま残る", async () => {
-    const runner = createRunner();
-
-    const writtenContents: string[] = [];
-    mockWriteFile.mockImplementation(async (_path: string, content: string) => {
-      writtenContents.push(content);
-    });
+    const { runner, mediumExecutor } = createRunner();
 
     const commission: CommissionDefinition = {
       name: "task-no-inject-test",
@@ -145,10 +119,11 @@ describe("{{task}} 自動注入", () => {
 
     await runner.execute(commission, "run-no-task", defaultRunOptions);
 
-    const promptContent = writtenContents.find((c) => c.includes("タスク:"));
+    const promptContent = mediumExecutor.calls.find((c) => c.prompt.includes("タスク:"));
     expect(promptContent).toBeDefined();
-    // task が未設定なので {{task}} はそのまま残る
-    expect(promptContent).toContain("{{task}}");
+    // task が未設定なので {{task}} は空文字に展開される
+    expect(promptContent!.prompt).not.toContain("{{task}}");
+    expect(promptContent!.prompt).toContain("タスク: \n");
   });
 });
 
@@ -158,12 +133,7 @@ describe("{{task}} 自動注入", () => {
 
 describe("{{report_dir}} テンプレート変数", () => {
   it("{{report_dir}} が .atelier/reports/{runId}/ に展開される", async () => {
-    const runner = createRunner();
-
-    const writtenContents: string[] = [];
-    mockWriteFile.mockImplementation(async (_path: string, content: string) => {
-      writtenContents.push(content);
-    });
+    const { runner, mediumExecutor } = createRunner();
 
     const commission: CommissionDefinition = {
       name: "report-dir-test",
@@ -181,10 +151,10 @@ describe("{{report_dir}} テンプレート変数", () => {
 
     await runner.execute(commission, "run-report-123", defaultRunOptions);
 
-    const promptContent = writtenContents.find((c) => c.includes("レポート出力先:"));
+    const promptContent = mediumExecutor.calls.find((c) => c.prompt.includes("レポート出力先:"));
     expect(promptContent).toBeDefined();
-    expect(promptContent).toContain("レポート出力先: .atelier/reports/run-report-123/");
-    expect(promptContent).not.toContain("{{report_dir}}");
+    expect(promptContent!.prompt).toContain("レポート出力先: .atelier/reports/run-report-123/");
+    expect(promptContent!.prompt).not.toContain("{{report_dir}}");
   });
 });
 
@@ -194,7 +164,7 @@ describe("{{report_dir}} テンプレート変数", () => {
 
 describe("output_contracts 複数ファイル出力", () => {
   it("output_contracts 定義時にファイルパスが Canvas に保存される", async () => {
-    const runner = createRunner();
+    const { runner, mediumExecutor } = createRunner("mock output");
 
     const writtenFiles: Array<{ path: string; content: string }> = [];
     mockWriteFile.mockImplementation(async (filePath: string, content: string) => {
@@ -229,19 +199,19 @@ describe("output_contracts 複数ファイル出力", () => {
 
     await runner.execute(commission, "run-oc-test", defaultRunOptions);
 
-    // verify-stroke の instruction に展開されたファイルパスを検証
-    const verifyPrompt = writtenFiles.find(
-      (f) => f.content.includes("計画ファイル:") && f.content.includes("確認してください"),
+    // verifier stroke の prompt に展開されたファイルパスを検証
+    const verifyCall = mediumExecutor.calls.find(
+      (c) => c.prompt.includes("計画ファイル:") && c.prompt.includes("確認してください"),
     );
-    expect(verifyPrompt).toBeDefined();
-    expect(verifyPrompt!.content).toContain(
+    expect(verifyCall).toBeDefined();
+    expect(verifyCall!.prompt).toContain(
       "計画ファイル: .atelier/reports/run-oc-test/plan.md",
     );
-    expect(verifyPrompt!.content).toContain(
+    expect(verifyCall!.prompt).toContain(
       "サマリ: .atelier/reports/run-oc-test/summary.md",
     );
-    expect(verifyPrompt!.content).not.toContain("{{planner_report_plan_md}}");
-    expect(verifyPrompt!.content).not.toContain("{{planner_report_summary_md}}");
+    expect(verifyCall!.prompt).not.toContain("{{planner_report_plan_md}}");
+    expect(verifyCall!.prompt).not.toContain("{{planner_report_summary_md}}");
 
     // レポートファイルが report_dir 配下に書き出されている
     const reportFiles = writtenFiles.filter((f) =>
@@ -255,7 +225,7 @@ describe("output_contracts 複数ファイル出力", () => {
   });
 
   it("output_contracts が未定義の場合は何も起きない", async () => {
-    const runner = createRunner();
+    const { runner } = createRunner();
 
     const writtenFiles: Array<{ path: string; content: string }> = [];
     mockWriteFile.mockImplementation(async (filePath: string, content: string) => {

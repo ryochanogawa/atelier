@@ -11,8 +11,8 @@ export {
   createDefaultRegistry,
   type MediumPort,
   type MediumAvailability,
-  type MediumRequest,
-  type MediumResponse,
+  type MediumExecuteRequest,
+  type MediumExecuteResponse,
   type MediumAvailabilityReport,
 } from "./medium/index.js";
 

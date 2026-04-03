@@ -39,6 +39,7 @@ import { writeTextFile, readTextFile, listFiles, listDirs, ensureDir } from "../
 import { CommissionRunUseCase } from "../../application/use-cases/run-commission.use-case.js";
 import { listBuiltinCommissions } from "../../builtin/index.js";
 import { createEventBus } from "../../infrastructure/event-bus/event-emitter.js";
+import { createMediumExecutor } from "../factories/medium.factory.js";
 
 // ── helpers ──────────────────────────────────────────────
 
@@ -218,14 +219,7 @@ async function buildCommissionInfra(projectPath: string) {
     },
   };
 
-  const mediaConfig = await configPort.loadMediaConfig(projectPath);
-  const mediumRegistry = {
-    getCommand(mediumName: string) {
-      const c = mediaConfig[mediumName];
-      return c ? { command: c.command, args: c.args as readonly string[] } : undefined;
-    },
-    listMedia() { return Object.keys(mediaConfig); },
-  };
+  const mediumExecutor = createMediumExecutor();
 
   const vcsPort = {
     async createWorktree(basePath: string, branchName: string) {
@@ -272,7 +266,7 @@ async function buildCommissionInfra(projectPath: string) {
     debug: () => {},
   };
 
-  return { configPort, mediumRegistry, vcsPort, loggerPort };
+  return { configPort, mediumExecutor, vcsPort, loggerPort };
 }
 
 /** Spec用 Commission を実行する（worktree なし、spec_dir を canvas に渡す） */
@@ -282,14 +276,14 @@ async function executeSpecCommission(
   description: string,
   specDirName: string,
 ): Promise<void> {
-  const { configPort, mediumRegistry, loggerPort } = await buildCommissionInfra(projectPath);
+  const { configPort, mediumExecutor, loggerPort } = await buildCommissionInfra(projectPath);
   const noopVcsPort = {
     async createWorktree(basePath: string, _branchName: string) { return basePath; },
     async removeWorktree(_w: string) {},
     async commitAll(_cwd: string, _message: string) {},
   };
   const eventBus = createEventBus();
-  const useCase = new CommissionRunUseCase(configPort, noopVcsPort, loggerPort, mediumRegistry, eventBus);
+  const useCase = new CommissionRunUseCase(configPort, noopVcsPort, loggerPort, mediumExecutor, eventBus);
 
   const execSpinner = createSpinner(`Commission '${commissionName}' を実行中...`).start();
 
@@ -313,9 +307,9 @@ async function executeCommission(
   commissionName: string,
   requirements: string,
 ): Promise<void> {
-  const { configPort, mediumRegistry, vcsPort, loggerPort } = await buildCommissionInfra(projectPath);
+  const { configPort, mediumExecutor, vcsPort, loggerPort } = await buildCommissionInfra(projectPath);
   const eventBus = createEventBus();
-  const useCase = new CommissionRunUseCase(configPort, vcsPort, loggerPort, mediumRegistry, eventBus);
+  const useCase = new CommissionRunUseCase(configPort, vcsPort, loggerPort, mediumExecutor, eventBus);
 
   const execSpinner = createSpinner(`Commission '${commissionName}' を実行中...`).start();
 

@@ -9,11 +9,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ---- モック設定 ----
-const mockRunSubprocess = vi.hoisted(() => vi.fn());
-vi.mock("../../../src/infrastructure/process/subprocess.js", () => ({
-  runSubprocess: mockRunSubprocess,
-}));
-
 const mockFileExists = vi.hoisted(() => vi.fn());
 const mockReadTextFile = vi.hoisted(() => vi.fn());
 vi.mock("../../../src/infrastructure/fs/file-system.js", () => ({
@@ -31,17 +26,24 @@ import type {
   ConductorConfig,
   ConductorResult,
 } from "../../../src/application/services/conductor.service.js";
-import type { MediumRegistry } from "../../../src/application/services/commission-runner.service.js";
+import type { MediumExecutor } from "../../../src/application/ports/medium-executor.port.js";
 
 // ── ヘルパー ────────────────────────────────────────────────────────
 
-function createMockMediumRegistry(): MediumRegistry {
+function createMockMediumExecutor(aiResponse: string): MediumExecutor {
   return {
-    getCommand: vi.fn().mockReturnValue({
-      command: "claude",
-      args: ["-p"],
-    }),
-    listMedia: vi.fn().mockReturnValue(["claude"]),
+    async execute() {
+      return {
+        content: aiResponse,
+        exitCode: 0,
+        durationMs: 100,
+        rawStdout: aiResponse,
+        rawStderr: "",
+      };
+    },
+    listMedia() {
+      return ["claude-code"];
+    },
   };
 }
 
@@ -66,18 +68,13 @@ describe("runConductor", () => {
   });
 
   it("approved ステータス → 対応する rule の next が返る", async () => {
-    mockRunSubprocess.mockResolvedValue({
-      stdout: "実装は完了しています。品質も十分です。\n[STATUS: approved]",
-      stderr: "",
-      exitCode: 0,
-      duration: 1000,
-    });
+    const aiResponse = "実装は完了しています。品質も十分です。\n[STATUS: approved]";
 
     const result = await runConductor(
       "stroke output here",
       createDefaultConfig(),
-      createMockMediumRegistry(),
-      "claude",
+      createMockMediumExecutor(aiResponse),
+      "claude-code",
       "/tmp",
       "/project",
     );
@@ -88,18 +85,13 @@ describe("runConductor", () => {
   });
 
   it("needs_fix ステータス → 対応する rule の next が返る", async () => {
-    mockRunSubprocess.mockResolvedValue({
-      stdout: "いくつかの問題があります。\n[STATUS: needs_fix]",
-      stderr: "",
-      exitCode: 0,
-      duration: 1000,
-    });
+    const aiResponse = "いくつかの問題があります。\n[STATUS: needs_fix]";
 
     const result = await runConductor(
       "stroke output here",
       createDefaultConfig(),
-      createMockMediumRegistry(),
-      "claude",
+      createMockMediumExecutor(aiResponse),
+      "claude-code",
       "/tmp",
       "/project",
     );
@@ -110,18 +102,13 @@ describe("runConductor", () => {
   });
 
   it("ステータスタグなし → デフォルト approved", async () => {
-    mockRunSubprocess.mockResolvedValue({
-      stdout: "特に問題はありませんでした。",
-      stderr: "",
-      exitCode: 0,
-      duration: 1000,
-    });
+    const aiResponse = "特に問題はありませんでした。";
 
     const result = await runConductor(
       "stroke output here",
       createDefaultConfig(),
-      createMockMediumRegistry(),
-      "claude",
+      createMockMediumExecutor(aiResponse),
+      "claude-code",
       "/tmp",
       "/project",
     );
@@ -131,18 +118,13 @@ describe("runConductor", () => {
   });
 
   it("rules に一致する condition がない → nextStroke = null", async () => {
-    mockRunSubprocess.mockResolvedValue({
-      stdout: "[STATUS: needs_review]",
-      stderr: "",
-      exitCode: 0,
-      duration: 1000,
-    });
+    const aiResponse = "[STATUS: needs_review]";
 
     const result = await runConductor(
       "stroke output here",
       createDefaultConfig(), // rules には "approved" と "needs_fix" のみ
-      createMockMediumRegistry(),
-      "claude",
+      createMockMediumExecutor(aiResponse),
+      "claude-code",
       "/tmp",
       "/project",
     );

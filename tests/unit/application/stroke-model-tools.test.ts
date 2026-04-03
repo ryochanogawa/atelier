@@ -8,51 +8,36 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ---- vi.hoisted でモック関数を先に定義（vitest ホイスティング対策）----
-const mockRunSubprocess = vi.hoisted(() => vi.fn());
 const mockFileExists = vi.hoisted(() => vi.fn());
 const mockReadTextFile = vi.hoisted(() => vi.fn());
-const mockMkdtemp = vi.hoisted(() => vi.fn());
-const mockWriteFile = vi.hoisted(() => vi.fn());
-const mockRm = vi.hoisted(() => vi.fn());
 
 // ---- インフラレイヤーのモック ----
-vi.mock("../../../src/infrastructure/process/subprocess.js", () => ({
-  runSubprocess: mockRunSubprocess,
-}));
-
 vi.mock("../../../src/infrastructure/fs/file-system.js", () => ({
   fileExists: mockFileExists,
   readTextFile: mockReadTextFile,
-}));
-
-vi.mock("node:fs/promises", () => ({
-  default: {
-    mkdtemp: mockMkdtemp,
-    writeFile: mockWriteFile,
-    rm: mockRm,
-  },
 }));
 
 import { CommissionRunnerService } from "../../../src/application/services/commission-runner.service.js";
 import { TypedEventEmitter } from "../../../src/infrastructure/event-bus/event-emitter.js";
 import type { AtelierEvents } from "../../../src/infrastructure/event-bus/event-emitter.js";
 import type { CommissionDefinition, RunOptions } from "../../../src/shared/types.js";
-import { createMockMediumRegistry } from "../../helpers/mock-medium.js";
+import { createMockMediumExecutor } from "../../helpers/mock-medium.js";
 
 // ---- テスト用ファクトリ ----
 
 function createRunner() {
   const eventBus = new TypedEventEmitter<AtelierEvents>();
-  const mediumRegistry = createMockMediumRegistry(
+  const mediumExecutor = createMockMediumExecutor(
     new Map([["test-medium", "mock response"]]),
   );
-  return new CommissionRunnerService({
+  const runner = new CommissionRunnerService({
     eventBus,
-    mediumRegistry,
+    mediumExecutor,
     defaultMedium: "test-medium",
     cwd: "/tmp/test-project",
     projectPath: "/tmp/test-project",
   });
+  return { runner, mediumExecutor };
 }
 
 const defaultRunOptions: RunOptions = { dryRun: false };
@@ -69,17 +54,6 @@ beforeEach(() => {
 
   mockFileExists.mockResolvedValue(false);
   mockReadTextFile.mockResolvedValue("");
-
-  mockRunSubprocess.mockResolvedValue({
-    stdout: "mock output",
-    stderr: "",
-    exitCode: 0,
-    duration: 100,
-  });
-
-  mockMkdtemp.mockResolvedValue("/tmp/atelier-test-123");
-  mockWriteFile.mockResolvedValue(undefined);
-  mockRm.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -91,14 +65,7 @@ afterEach(() => {
 // ============================================================
 
 describe("Stroke model / allowed_tools", () => {
-  /** runSubprocess に渡されたシェルコマンドを取得するヘルパー */
-  function getShellCommand(): string {
-    const call = mockRunSubprocess.mock.calls[0];
-    // runSubprocess("bash", ["-c", shellCmd], ...)
-    return call[1][1];
-  }
-
-  it("stroke.model が指定されている場合、コマンド引数に --model が含まれる", async () => {
+  it("stroke.model が指定されている場合、MediumExecutor に model が渡される", async () => {
     // パレットを返すようモック
     mockFileExists.mockImplementation((p: string) =>
       Promise.resolve(p.includes("palette")),
@@ -120,15 +87,14 @@ describe("Stroke model / allowed_tools", () => {
       ],
     };
 
-    const runner = createRunner();
+    const { runner, mediumExecutor } = createRunner();
     await runner.execute(commission, "run-1", defaultRunOptions);
 
-    const cmd = getShellCommand();
-    expect(cmd).toContain("--model");
-    expect(cmd).toContain("claude-sonnet-4-6");
+    expect(mediumExecutor.calls.length).toBe(1);
+    expect(mediumExecutor.calls[0].model).toBe("claude-sonnet-4-6");
   });
 
-  it("stroke.model が未指定の場合、--model 引数なし", async () => {
+  it("stroke.model が未指定の場合、model は undefined", async () => {
     mockFileExists.mockImplementation((p: string) =>
       Promise.resolve(p.includes("palette")),
     );
@@ -149,14 +115,14 @@ describe("Stroke model / allowed_tools", () => {
       ],
     };
 
-    const runner = createRunner();
+    const { runner, mediumExecutor } = createRunner();
     await runner.execute(commission, "run-1", defaultRunOptions);
 
-    const cmd = getShellCommand();
-    expect(cmd).not.toContain("--model");
+    expect(mediumExecutor.calls.length).toBe(1);
+    expect(mediumExecutor.calls[0].model).toBeUndefined();
   });
 
-  it("stroke.allowed_tools が指定されている場合、コマンド引数に --allowedTools が含まれる", async () => {
+  it("stroke.allowed_tools が指定されている場合、MediumExecutor に allowedTools が渡される", async () => {
     mockFileExists.mockImplementation((p: string) =>
       Promise.resolve(p.includes("palette")),
     );
@@ -177,17 +143,14 @@ describe("Stroke model / allowed_tools", () => {
       ],
     };
 
-    const runner = createRunner();
+    const { runner, mediumExecutor } = createRunner();
     await runner.execute(commission, "run-1", defaultRunOptions);
 
-    const cmd = getShellCommand();
-    expect(cmd).toContain("--allowedTools");
-    expect(cmd).toContain("Read");
-    expect(cmd).toContain("Glob");
-    expect(cmd).toContain("Grep");
+    expect(mediumExecutor.calls.length).toBe(1);
+    expect(mediumExecutor.calls[0].allowedTools).toEqual(["Read", "Glob", "Grep"]);
   });
 
-  it("stroke.allowed_tools が未指定の場合、--allowedTools 引数なし（allow_edit も false）", async () => {
+  it("stroke.allowed_tools が未指定の場合、allowedTools は undefined（allow_edit も false）", async () => {
     mockFileExists.mockImplementation((p: string) =>
       Promise.resolve(p.includes("palette")),
     );
@@ -208,14 +171,14 @@ describe("Stroke model / allowed_tools", () => {
       ],
     };
 
-    const runner = createRunner();
+    const { runner, mediumExecutor } = createRunner();
     await runner.execute(commission, "run-1", defaultRunOptions);
 
-    const cmd = getShellCommand();
-    expect(cmd).not.toContain("--allowedTools");
+    expect(mediumExecutor.calls.length).toBe(1);
+    expect(mediumExecutor.calls[0].allowedTools).toBeUndefined();
   });
 
-  it("model と allowed_tools の両方が指定されている場合、両方の引数が含まれる", async () => {
+  it("model と allowed_tools の両方が指定されている場合、両方が MediumExecutor に渡される", async () => {
     mockFileExists.mockImplementation((p: string) =>
       Promise.resolve(p.includes("palette")),
     );
@@ -237,16 +200,11 @@ describe("Stroke model / allowed_tools", () => {
       ],
     };
 
-    const runner = createRunner();
+    const { runner, mediumExecutor } = createRunner();
     await runner.execute(commission, "run-1", defaultRunOptions);
 
-    const cmd = getShellCommand();
-    expect(cmd).toContain("--model");
-    expect(cmd).toContain("claude-opus-4-6");
-    expect(cmd).toContain("--allowedTools");
-    expect(cmd).toContain("Read");
-    expect(cmd).toContain("Glob");
-    expect(cmd).toContain("Grep");
-    expect(cmd).toContain("Bash");
+    expect(mediumExecutor.calls.length).toBe(1);
+    expect(mediumExecutor.calls[0].model).toBe("claude-opus-4-6");
+    expect(mediumExecutor.calls[0].allowedTools).toEqual(["Read", "Glob", "Grep", "Bash"]);
   });
 });

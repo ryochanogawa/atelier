@@ -13,7 +13,7 @@ export { StrokeStatus, isValidStrokeTransition } from "./domain/value-objects/st
 export { type Facet, FacetKind, createFacet } from "./domain/value-objects/facet.vo.js";
 export { type Transition, createTransition } from "./domain/value-objects/transition.vo.js";
 export { type CritiqueVerdict, type CritiqueIssue, createCritiqueIssue } from "./domain/value-objects/critique-verdict.vo.js";
-export { type MediumRequest, type MediumResponse, type MediumUsage } from "./domain/value-objects/medium-config.vo.js";
+export { type MediumInferenceConfig, type MediumInferenceResponse, type MediumUsage } from "./domain/value-objects/medium-config.vo.js";
 export { AtelierError, CommissionError, StrokeError, MediumError, ConfigError } from "./domain/errors/atelier-error.js";
 export { type DomainEvent, createEventId } from "./domain/events/domain-event.js";
 

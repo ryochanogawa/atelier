@@ -9,29 +9,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ---- vi.hoisted でモック関数を先に定義 ----
-const mockRunSubprocess = vi.hoisted(() => vi.fn());
 const mockFileExists = vi.hoisted(() => vi.fn());
 const mockReadTextFile = vi.hoisted(() => vi.fn());
-const mockMkdtemp = vi.hoisted(() => vi.fn());
-const mockWriteFile = vi.hoisted(() => vi.fn());
-const mockRm = vi.hoisted(() => vi.fn());
 
 // ---- インフラレイヤーのモック ----
-vi.mock("../../../src/infrastructure/process/subprocess.js", () => ({
-  runSubprocess: mockRunSubprocess,
-}));
-
 vi.mock("../../../src/infrastructure/fs/file-system.js", () => ({
   fileExists: mockFileExists,
   readTextFile: mockReadTextFile,
-}));
-
-vi.mock("node:fs/promises", () => ({
-  default: {
-    mkdtemp: mockMkdtemp,
-    writeFile: mockWriteFile,
-    rm: mockRm,
-  },
 }));
 
 const mockGetBuiltinPalettePath = vi.hoisted(() => vi.fn());
@@ -52,17 +36,27 @@ import type {
   ConductorConfig,
 } from "../../../src/application/services/conductor.service.js";
 import { Canvas } from "../../../src/domain/models/canvas.model.js";
-import type { MediumRegistry } from "../../../src/application/services/commission-runner.service.js";
+import type { MediumExecutor } from "../../../src/application/ports/medium-executor.port.js";
 
 // ── ヘルパー ────────────────────────────────────────────────────────
 
-function createMockMediumRegistry(): MediumRegistry {
+/** 指定した AI レスポンスを返す MediumExecutor モックを作成 */
+let lastAiResponse = "";
+function createMockMediumExecutor(aiResponse: string): MediumExecutor {
+  lastAiResponse = aiResponse;
   return {
-    getCommand: vi.fn().mockReturnValue({
-      command: "claude",
-      args: ["-p"],
-    }),
-    listMedia: vi.fn().mockReturnValue(["claude"]),
+    async execute() {
+      return {
+        content: aiResponse,
+        exitCode: 0,
+        durationMs: 100,
+        rawStdout: aiResponse,
+        rawStderr: "",
+      };
+    },
+    listMedia() {
+      return ["claude-code"];
+    },
   };
 }
 
@@ -84,25 +78,16 @@ describe("Conductor 統合テスト: commission-runner 経由の conductor.servi
     // デフォルト: パレットファイルは存在しない（ビルトインフォールバック）
     mockFileExists.mockResolvedValue(false);
     mockGetBuiltinPalettePath.mockReturnValue("/builtin/palettes/conductor.yaml");
-    // mkdtemp のモック
-    mockMkdtemp.mockResolvedValue("/tmp/atelier-conductor-test");
-    mockWriteFile.mockResolvedValue(undefined);
-    mockRm.mockResolvedValue(undefined);
   });
 
   it("approved → conductor.rules に基づく次の stroke (deploy) が返る", async () => {
-    mockRunSubprocess.mockResolvedValue({
-      stdout: "実装は問題ありません。\n[STATUS: approved]",
-      stderr: "",
-      exitCode: 0,
-      duration: 1000,
-    });
+    const aiResponse = "実装は問題ありません。\n[STATUS: approved]";
 
     const result = await runConductor(
       "stroke output here",
       createDefaultConfig(),
-      createMockMediumRegistry(),
-      "claude",
+      createMockMediumExecutor(aiResponse),
+      "claude-code",
       "/tmp",
       "/project",
     );
@@ -110,23 +95,16 @@ describe("Conductor 統合テスト: commission-runner 経由の conductor.servi
     expect(result.status).toBe("approved");
     expect(result.nextStroke).toBe("deploy");
     expect(result.rawResponse).toContain("[STATUS: approved]");
-    // runSubprocess が呼ばれたことを確認（conductor.service.ts 経由）
-    expect(mockRunSubprocess).toHaveBeenCalledTimes(1);
   });
 
   it("needs_fix → conductor.rules に基づく再実行 stroke (implement) が返る", async () => {
-    mockRunSubprocess.mockResolvedValue({
-      stdout: "修正が必要です。\n[STATUS: needs_fix]",
-      stderr: "",
-      exitCode: 0,
-      duration: 1000,
-    });
+    const aiResponse = "修正が必要です。\n[STATUS: needs_fix]";
 
     const result = await runConductor(
       "stroke output here",
       createDefaultConfig(),
-      createMockMediumRegistry(),
-      "claude",
+      createMockMediumExecutor(aiResponse),
+      "claude-code",
       "/tmp",
       "/project",
     );
@@ -137,18 +115,13 @@ describe("Conductor 統合テスト: commission-runner 経由の conductor.servi
   });
 
   it("rules 未マッチ → nextStroke = null（通常フローフォールバック用）", async () => {
-    mockRunSubprocess.mockResolvedValue({
-      stdout: "[STATUS: needs_review]",
-      stderr: "",
-      exitCode: 0,
-      duration: 1000,
-    });
+    const aiResponse = "[STATUS: needs_review]";
 
     const result = await runConductor(
       "stroke output here",
       createDefaultConfig(), // rules には "approved" と "needs_fix" のみ
-      createMockMediumRegistry(),
-      "claude",
+      createMockMediumExecutor(aiResponse),
+      "claude-code",
       "/tmp",
       "/project",
     );
@@ -158,12 +131,7 @@ describe("Conductor 統合テスト: commission-runner 経由の conductor.servi
   });
 
   it("ステータスが Canvas に保存されること（runConductorPhase のフロー検証）", async () => {
-    mockRunSubprocess.mockResolvedValue({
-      stdout: "品質は十分です。\n[STATUS: approved]",
-      stderr: "",
-      exitCode: 0,
-      duration: 1000,
-    });
+    const aiResponse = "品質は十分です。\n[STATUS: approved]";
 
     const canvas = new Canvas();
     canvas.set("review_output", "some review result");
@@ -172,8 +140,8 @@ describe("Conductor 統合テスト: commission-runner 経由の conductor.servi
     const result = await runConductor(
       "stroke output here",
       createDefaultConfig(),
-      createMockMediumRegistry(),
-      "claude",
+      createMockMediumExecutor(aiResponse),
+      "claude-code",
       "/tmp",
       "/project",
     );
@@ -188,18 +156,13 @@ describe("Conductor 統合テスト: commission-runner 経由の conductor.servi
   });
 
   it("parseStatusTag は最初のタグを採用する（conductor.service.ts の仕様）", async () => {
-    mockRunSubprocess.mockResolvedValue({
-      stdout: "[STATUS: needs_fix] 修正後 [STATUS: approved]",
-      stderr: "",
-      exitCode: 0,
-      duration: 1000,
-    });
+    const aiResponse = "[STATUS: needs_fix] 修正後 [STATUS: approved]";
 
     const result = await runConductor(
       "stroke output here",
       createDefaultConfig(),
-      createMockMediumRegistry(),
-      "claude",
+      createMockMediumExecutor(aiResponse),
+      "claude-code",
       "/tmp",
       "/project",
     );

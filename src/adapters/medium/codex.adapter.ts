@@ -8,9 +8,9 @@ import { execa, type ResultPromise } from "execa";
 import type {
   MediumPort,
   MediumAvailability,
-  MediumRequest,
-  MediumResponse,
-} from "./types.js";
+  MediumExecuteRequest,
+  MediumExecuteResponse,
+} from "../../domain/ports/medium.port.js";
 
 export class CodexAdapter implements MediumPort {
   readonly name = "codex";
@@ -31,7 +31,7 @@ export class CodexAdapter implements MediumPort {
     }
   }
 
-  async execute(request: MediumRequest): Promise<MediumResponse> {
+  async execute(request: MediumExecuteRequest): Promise<MediumExecuteResponse> {
     const args = this.buildArgs(request);
     const startTime = Date.now();
 
@@ -65,7 +65,7 @@ export class CodexAdapter implements MediumPort {
     }
   }
 
-  private buildArgs(request: MediumRequest): string[] {
+  private buildArgs(request: MediumExecuteRequest): string[] {
     // `codex exec` サブコマンドで非対話実行
     const args: string[] = ["exec"];
 
@@ -88,7 +88,7 @@ export class CodexAdapter implements MediumPort {
     stderr: string,
     exitCode: number,
     durationMs: number,
-  ): MediumResponse {
+  ): MediumExecuteResponse {
     return {
       content: stdout.trim(),
       durationMs,

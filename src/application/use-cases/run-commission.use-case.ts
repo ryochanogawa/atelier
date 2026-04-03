@@ -5,7 +5,8 @@
 
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
-import { CommissionRunnerService, type MediumRegistry } from "../services/commission-runner.service.js";
+import { CommissionRunnerService } from "../services/commission-runner.service.js";
+import type { MediumExecutor } from "../ports/medium-executor.port.js";
 import { createRunResultDto, type RunResultDto } from "../dto/run-result.dto.js";
 import { generateRunId, resolveAtelierPath, timestamp } from "../../shared/utils.js";
 import { COMMISSIONS_DIR, STUDIO_CONFIG_FILE } from "../../shared/constants.js";
@@ -41,7 +42,7 @@ export class CommissionRunUseCase {
     private readonly configPort: ConfigPort,
     private readonly vcsPort: VcsPort,
     private readonly loggerPort: LoggerPort,
-    private readonly mediumRegistry: MediumRegistry,
+    private readonly mediumExecutor: MediumExecutor,
     private readonly eventBus: TypedEventEmitter<AtelierEvents>,
   ) {}
 
@@ -88,7 +89,7 @@ export class CommissionRunUseCase {
       // 4. CommissionRunnerService で実行
       const runner = new CommissionRunnerService({
         eventBus: this.eventBus,
-        mediumRegistry: this.mediumRegistry,
+        mediumExecutor: this.mediumExecutor,
         defaultMedium: options.medium ?? studioConfig.defaultMedium,
         cwd: worktreePath,
         projectPath,

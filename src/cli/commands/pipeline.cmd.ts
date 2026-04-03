@@ -20,7 +20,7 @@ import {
   createSpinner,
 } from "../output.js";
 import type { ConfigPort, VcsPort, LoggerPort } from "../../application/use-cases/run-commission.use-case.js";
-import type { MediumRegistry } from "../../application/services/commission-runner.service.js";
+import { createMediumExecutor } from "../factories/medium.factory.js";
 import type { StudioConfig, MediumConfig, PipelineConfig } from "../../shared/types.js";
 
 /**
@@ -127,24 +127,6 @@ async function loadPipelineConfig(projectPath: string): Promise<PipelineConfig |
 }
 
 /**
- * MediumRegistry を studio.yaml から構築する。
- */
-async function createMediumRegistry(projectPath: string): Promise<MediumRegistry> {
-  const configPort = createConfigPort();
-  const mediaConfig = await configPort.loadMediaConfig(projectPath);
-
-  return {
-    getCommand(mediumName: string) {
-      const config = mediaConfig[mediumName];
-      return config ? { command: config.command, args: config.args } : undefined;
-    },
-    listMedia() {
-      return Object.keys(mediaConfig);
-    },
-  };
-}
-
-/**
  * CI 環境かどうかを検出する。
  */
 function isCI(): boolean {
@@ -173,7 +155,7 @@ export function createPipelineCommand(): Command {
       const spinner = ciMode ? null : createSpinner(`Pipeline '${name}' を実行中...`).start();
 
       try {
-        const mediumRegistry = await createMediumRegistry(projectPath);
+        const mediumExecutor = createMediumExecutor();
         const eventBus = createEventBus();
         const prAdapter = opts.autoPr ? await createPRAdapter(projectPath) : undefined;
         const pipelineConfig = await loadPipelineConfig(projectPath);
@@ -182,7 +164,7 @@ export function createPipelineCommand(): Command {
           createConfigPort(),
           createVcsPort(),
           createLoggerPort(),
-          mediumRegistry,
+          mediumExecutor,
           eventBus,
           prAdapter,
         );

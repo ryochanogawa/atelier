@@ -3,25 +3,20 @@
  *
  * テスト戦略:
  * - fileExists / readTextFile をモックしてファイルシステム依存を排除
- * - runSubprocess をモックして外部プロセス実行を回避
+ * - MediumExecutor をモックして外部プロセス実行を回避
  * - dry-run / Canvas 連携 / プロンプト合成ロジックを検証
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ---- vi.hoisted でモック関数を先に定義（vitest ホイスティング対策）----
-const mockRunSubprocess = vi.hoisted(() => vi.fn());
 const mockFileExists = vi.hoisted(() => vi.fn());
 const mockReadTextFile = vi.hoisted(() => vi.fn());
-const mockMkdtemp = vi.hoisted(() => vi.fn());
+const mockMkdir = vi.hoisted(() => vi.fn());
 const mockWriteFile = vi.hoisted(() => vi.fn());
 const mockRm = vi.hoisted(() => vi.fn());
 
 // ---- インフラレイヤーのモック ----
-vi.mock("../../../src/infrastructure/process/subprocess.js", () => ({
-  runSubprocess: mockRunSubprocess,
-}));
-
 vi.mock("../../../src/infrastructure/fs/file-system.js", () => ({
   fileExists: mockFileExists,
   readTextFile: mockReadTextFile,
@@ -29,7 +24,7 @@ vi.mock("../../../src/infrastructure/fs/file-system.js", () => ({
 
 vi.mock("node:fs/promises", () => ({
   default: {
-    mkdtemp: mockMkdtemp,
+    mkdir: mockMkdir,
     writeFile: mockWriteFile,
     rm: mockRm,
   },
@@ -39,22 +34,22 @@ import { CommissionRunnerService } from "../../../src/application/services/commi
 import { TypedEventEmitter } from "../../../src/infrastructure/event-bus/event-emitter.js";
 import type { AtelierEvents } from "../../../src/infrastructure/event-bus/event-emitter.js";
 import type { CommissionDefinition, RunOptions } from "../../../src/shared/types.js";
-import { createMockMediumRegistry } from "../../helpers/mock-medium.js";
+import { createMockMediumExecutor } from "../../helpers/mock-medium.js";
 
 // ---- テスト用ファクトリ ----
 
 function createRunner(opts?: { defaultMedium?: string; mediumMap?: Map<string, string> }) {
   const eventBus = new TypedEventEmitter<AtelierEvents>();
-  const mediumRegistry = createMockMediumRegistry(
+  const mediumExecutor = createMockMediumExecutor(
     opts?.mediumMap ?? new Map([["test-medium", "mock response"]]),
   );
-  return new CommissionRunnerService({
+  return { runner: new CommissionRunnerService({
     eventBus,
-    mediumRegistry,
+    mediumExecutor,
     defaultMedium: opts?.defaultMedium ?? "test-medium",
     cwd: "/tmp/test-project",
     projectPath: "/tmp/test-project",
-  });
+  }), mediumExecutor };
 }
 
 function makeCommission(overrides?: Partial<CommissionDefinition>): CommissionDefinition {
@@ -115,16 +110,8 @@ beforeEach(() => {
   mockFileExists.mockResolvedValue(false);
   mockReadTextFile.mockResolvedValue("");
 
-  // デフォルト: subprocess は成功レスポンスを返す
-  mockRunSubprocess.mockResolvedValue({
-    stdout: "mock output",
-    stderr: "",
-    exitCode: 0,
-    duration: 100,
-  });
-
   // デフォルト: fs/promises モック
-  mockMkdtemp.mockResolvedValue("/tmp/atelier-test-123");
+  mockMkdir.mockResolvedValue(undefined);
   mockWriteFile.mockResolvedValue(undefined);
   mockRm.mockResolvedValue(undefined);
 });
@@ -138,18 +125,18 @@ afterEach(() => {
 // ============================================================
 
 describe("dry-run モード", () => {
-  it("dry-run=true のとき runSubprocess が呼ばれない", async () => {
-    const runner = createRunner();
+  it("dry-run=true のとき MediumExecutor が呼ばれない", async () => {
+    const { runner, mediumExecutor } = createRunner();
     const commission = makeCommission();
 
     const result = await runner.execute(commission, "run-001", dryRunOptions);
 
-    expect(mockRunSubprocess).not.toHaveBeenCalled();
+    expect(mediumExecutor.calls).toHaveLength(0);
     expect(result.strokesExecuted).toBe(1);
   });
 
   it("dry-run=true のとき Commission は Completed で返る", async () => {
-    const runner = createRunner();
+    const { runner } = createRunner();
     const commission = makeCommission();
 
     const result = await runner.execute(commission, "run-001", dryRunOptions);
@@ -159,7 +146,7 @@ describe("dry-run モード", () => {
   });
 
   it("dry-run=true でも strokesExecuted はストローク数だけカウントされる", async () => {
-    const runner = createRunner();
+    const { runner, mediumExecutor } = createRunner();
     const commission = makeCommission({
       strokes: [
         { name: "s1", palette: "coder", instruction: "step1", inputs: [], outputs: [] },
@@ -170,12 +157,12 @@ describe("dry-run モード", () => {
 
     const result = await runner.execute(commission, "run-001", dryRunOptions);
 
-    expect(mockRunSubprocess).not.toHaveBeenCalled();
+    expect(mediumExecutor.calls).toHaveLength(0);
     expect(result.strokesExecuted).toBe(3);
   });
 
-  it("dry-run=true かつ initialCanvas があっても runSubprocess は呼ばれない", async () => {
-    const runner = createRunner();
+  it("dry-run=true かつ initialCanvas があっても MediumExecutor は呼ばれない", async () => {
+    const { runner, mediumExecutor } = createRunner();
     const commission = makeCommission();
 
     const result = await runner.execute(commission, "run-001", {
@@ -183,7 +170,7 @@ describe("dry-run モード", () => {
       initialCanvas: { requirement: "test requirement" },
     });
 
-    expect(mockRunSubprocess).not.toHaveBeenCalled();
+    expect(mediumExecutor.calls).toHaveLength(0);
     expect(result.errors).toHaveLength(0);
   });
 });
@@ -194,26 +181,25 @@ describe("dry-run モード", () => {
 
 describe("Canvas 連携（inputs / outputs）", () => {
   it("前のストロークの outputs が次のストロークの inputs として Canvas から参照される", async () => {
-    const runner = createRunner();
-
-    const writtenContents: string[] = [];
-    mockWriteFile.mockImplementation(async (_path: string, content: string) => {
-      writtenContents.push(content);
+    const eventBus = new TypedEventEmitter<AtelierEvents>();
+    let callCount = 0;
+    const mediumExecutor = {
+      calls: [] as Array<{ prompt: string; medium: string }>,
+      async execute(request: { prompt: string; medium: string; workingDirectory: string; allowEdit: boolean; timeoutMs: number }) {
+        mediumExecutor.calls.push(request);
+        callCount++;
+        const content = callCount === 1 ? "ANALYSIS_OUTPUT" : "IMPL_OUTPUT";
+        return { content, exitCode: 0, durationMs: 50, rawStdout: content, rawStderr: "" };
+      },
+      listMedia: () => ["test-medium"],
+    };
+    const runner = new CommissionRunnerService({
+      eventBus,
+      mediumExecutor,
+      defaultMedium: "test-medium",
+      cwd: "/tmp/test-project",
+      projectPath: "/tmp/test-project",
     });
-
-    mockRunSubprocess
-      .mockResolvedValueOnce({
-        stdout: "ANALYSIS_OUTPUT",
-        stderr: "",
-        exitCode: 0,
-        duration: 50,
-      })
-      .mockResolvedValueOnce({
-        stdout: "IMPL_OUTPUT",
-        stderr: "",
-        exitCode: 0,
-        duration: 50,
-      });
 
     const commission = makeCommission({
       strokes: [
@@ -239,19 +225,14 @@ describe("Canvas 連携（inputs / outputs）", () => {
     expect(result.errors).toHaveLength(0);
     expect(result.strokesExecuted).toBe(2);
 
-    // implement ストローク用のプロンプト（2番目の writeFile 呼び出し）に
+    // implement ストローク用のプロンプト（2番目の execute 呼び出し）に
     // analyze の stdout (ANALYSIS_OUTPUT) が含まれているはず
-    expect(writtenContents.length).toBeGreaterThanOrEqual(2);
-    expect(writtenContents[1]).toContain("ANALYSIS_OUTPUT");
+    expect(mediumExecutor.calls.length).toBeGreaterThanOrEqual(2);
+    expect(mediumExecutor.calls[1].prompt).toContain("ANALYSIS_OUTPUT");
   });
 
   it("initialCanvas の値がテンプレート変数として instruction に展開される", async () => {
-    const runner = createRunner();
-
-    const writtenContents: string[] = [];
-    mockWriteFile.mockImplementation(async (_path: string, content: string) => {
-      writtenContents.push(content);
-    });
+    const { runner, mediumExecutor } = createRunner();
 
     // instruction がインライン扱い（51文字以上 or 改行あり）になるよう長めに設定
     // resolveInstruction の判定: 改行なし & 50文字以下 & ".md" なし → ファイル参照扱い
@@ -272,12 +253,12 @@ describe("Canvas 連携（inputs / outputs）", () => {
       initialCanvas: { requirement: "ユーザー認証機能" },
     });
 
-    expect(writtenContents.length).toBeGreaterThanOrEqual(1);
-    expect(writtenContents[0]).toContain("ユーザー認証機能");
+    expect(mediumExecutor.calls.length).toBeGreaterThanOrEqual(1);
+    expect(mediumExecutor.calls[0].prompt).toContain("ユーザー認証機能");
   });
 
   it("outputs が空でも次のストロークが正常に実行される", async () => {
-    const runner = createRunner();
+    const { runner, mediumExecutor } = createRunner();
     const commission = makeCommission({
       strokes: [
         { name: "s1", palette: "coder", instruction: "step1", inputs: [], outputs: [] },
@@ -289,16 +270,11 @@ describe("Canvas 連携（inputs / outputs）", () => {
 
     expect(result.errors).toHaveLength(0);
     expect(result.strokesExecuted).toBe(2);
-    expect(mockRunSubprocess).toHaveBeenCalledTimes(2);
+    expect(mediumExecutor.calls).toHaveLength(2);
   });
 
   it("Canvas に存在しない inputs キーは userPrompt に出力されない", async () => {
-    const runner = createRunner();
-
-    const writtenContents: string[] = [];
-    mockWriteFile.mockImplementation(async (_path: string, content: string) => {
-      writtenContents.push(content);
-    });
+    const { runner, mediumExecutor } = createRunner();
 
     const commission = makeCommission({
       strokes: [
@@ -315,7 +291,7 @@ describe("Canvas 連携（inputs / outputs）", () => {
     await runner.execute(commission, "run-005", defaultRunOptions);
 
     // Canvas に存在しないキーはプロンプトに含まれない
-    expect(writtenContents[0]).not.toContain("[nonexistent_key]");
+    expect(mediumExecutor.calls[0].prompt).not.toContain("[nonexistent_key]");
   });
 });
 
@@ -325,12 +301,7 @@ describe("Canvas 連携（inputs / outputs）", () => {
 
 describe("プロンプト合成（ファセット: persona + policy + instruction + knowledge + contract）", () => {
   it("パレットが見つからない場合でも instruction のみでプロンプトが生成される", async () => {
-    const runner = createRunner();
-
-    const writtenContents: string[] = [];
-    mockWriteFile.mockImplementation(async (_path: string, content: string) => {
-      writtenContents.push(content);
-    });
+    const { runner, mediumExecutor } = createRunner();
 
     const commission = makeCommission({
       strokes: [
@@ -346,19 +317,15 @@ describe("プロンプト合成（ファセット: persona + policy + instructio
 
     await runner.execute(commission, "run-010", defaultRunOptions);
 
-    expect(writtenContents.length).toBeGreaterThanOrEqual(1);
-    expect(writtenContents[0]).toContain("インストラクション本文");
+    expect(mediumExecutor.calls.length).toBeGreaterThanOrEqual(1);
+    const prompt = mediumExecutor.calls[0].prompt;
+    expect(prompt).toContain("インストラクション本文");
     // persona がなければ [Persona] セクションなし
-    expect(writtenContents[0]).not.toContain("[Persona]");
+    expect(prompt).not.toContain("[Persona]");
   });
 
   it("パレットの persona が [Persona] セクションとして先頭に付与される", async () => {
-    const runner = createRunner();
-
-    const writtenContents: string[] = [];
-    mockWriteFile.mockImplementation(async (_path: string, content: string) => {
-      writtenContents.push(content);
-    });
+    const { runner, mediumExecutor } = createRunner();
 
     mockFileExists.mockImplementation(async (path: string) => {
       return path.includes("palettes/coder.yaml");
@@ -384,7 +351,7 @@ describe("プロンプト合成（ファセット: persona + policy + instructio
 
     await runner.execute(commission, "run-011", defaultRunOptions);
 
-    const prompt = writtenContents[0];
+    const prompt = mediumExecutor.calls[0].prompt;
     expect(prompt).toBeDefined();
     expect(prompt).toContain("[Persona]");
     expect(prompt).toContain("あなたは熟練したコーダーです。");
@@ -392,12 +359,7 @@ describe("プロンプト合成（ファセット: persona + policy + instructio
   });
 
   it("パレットにポリシーが定義されている場合 [Policy] セクションが付与される", async () => {
-    const runner = createRunner();
-
-    const writtenContents: string[] = [];
-    mockWriteFile.mockImplementation(async (_path: string, content: string) => {
-      writtenContents.push(content);
-    });
+    const { runner, mediumExecutor } = createRunner();
 
     mockFileExists.mockImplementation(async (path: string) => {
       return (
@@ -429,19 +391,14 @@ describe("プロンプト合成（ファセット: persona + policy + instructio
 
     await runner.execute(commission, "run-012", defaultRunOptions);
 
-    const prompt = writtenContents[0];
+    const prompt = mediumExecutor.calls[0].prompt;
     expect(prompt).toBeDefined();
     expect(prompt).toContain("[Policy]");
     expect(prompt).toContain("常にテストを書くこと");
   });
 
   it("contract が指定されている場合 [Output Contract] セクションが付与される", async () => {
-    const runner = createRunner();
-
-    const writtenContents: string[] = [];
-    mockWriteFile.mockImplementation(async (_path: string, content: string) => {
-      writtenContents.push(content);
-    });
+    const { runner, mediumExecutor } = createRunner();
 
     mockFileExists.mockImplementation(async (path: string) => {
       return path.includes("contracts/json-output.yaml");
@@ -468,19 +425,14 @@ describe("プロンプト合成（ファセット: persona + policy + instructio
 
     await runner.execute(commission, "run-013", defaultRunOptions);
 
-    const prompt = writtenContents[0];
+    const prompt = mediumExecutor.calls[0].prompt;
     expect(prompt).toBeDefined();
     expect(prompt).toContain("[Output Contract]");
     expect(prompt).toContain("{ result: string }");
   });
 
   it("ファセット順序: canvas inputs → instruction → [Output Contract] → [Policy]", async () => {
-    const runner = createRunner();
-
-    const writtenContents: string[] = [];
-    mockWriteFile.mockImplementation(async (_path: string, content: string) => {
-      writtenContents.push(content);
-    });
+    const { runner, mediumExecutor } = createRunner();
 
     mockFileExists.mockImplementation(async (path: string) => {
       return (
@@ -520,7 +472,7 @@ describe("プロンプト合成（ファセット: persona + policy + instructio
       initialCanvas: { canvas_input: "キャンバスの値" },
     });
 
-    const prompt = writtenContents[0];
+    const prompt = mediumExecutor.calls[0].prompt;
     expect(prompt).toBeDefined();
 
     // userPrompt 部分の順序を確認（インデックス比較）
@@ -541,12 +493,7 @@ describe("プロンプト合成（ファセット: persona + policy + instructio
   });
 
   it("contract の format に {{変数}} テンプレートが含まれる場合 Canvas の値で展開される", async () => {
-    const runner = createRunner();
-
-    const writtenContents: string[] = [];
-    mockWriteFile.mockImplementation(async (_path: string, content: string) => {
-      writtenContents.push(content);
-    });
+    const { runner, mediumExecutor } = createRunner();
 
     mockFileExists.mockImplementation(async (path: string) => {
       return path.includes("contracts/template-contract.yaml");
@@ -579,7 +526,7 @@ describe("プロンプト合成（ファセット: persona + policy + instructio
       initialCanvas: { target_lang: "TypeScript" },
     });
 
-    const prompt = writtenContents[0];
+    const prompt = mediumExecutor.calls[0].prompt;
     expect(prompt).toBeDefined();
     expect(prompt).toContain("ターゲット: TypeScript");
   });
@@ -590,14 +537,21 @@ describe("プロンプト合成（ファセット: persona + policy + instructio
 // ============================================================
 
 describe("エラーハンドリング", () => {
-  it("subprocess が非ゼロ終了コードを返したとき Commission は Failed になる", async () => {
-    const runner = createRunner();
-
-    mockRunSubprocess.mockResolvedValue({
-      stdout: "",
-      stderr: "エラー発生",
-      exitCode: 1,
-      duration: 50,
+  it("MediumExecutor が非ゼロ終了コードを返したとき Commission は Failed になる", async () => {
+    const eventBus = new TypedEventEmitter<AtelierEvents>();
+    const mediumExecutor = {
+      calls: [] as unknown[],
+      async execute() {
+        return { content: "", exitCode: 1, durationMs: 50, rawStdout: "", rawStderr: "エラー発生" };
+      },
+      listMedia: () => ["test-medium"],
+    };
+    const runner = new CommissionRunnerService({
+      eventBus,
+      mediumExecutor,
+      defaultMedium: "test-medium",
+      cwd: "/tmp/test-project",
+      projectPath: "/tmp/test-project",
     });
 
     const commission = makeCommission();
@@ -608,16 +562,17 @@ describe("エラーハンドリング", () => {
     expect(result.errors[0].strokeName).toBe("stroke-1");
   });
 
-  it("存在しない Medium 名が指定されたとき Commission は Failed になる", async () => {
-    // mediumRegistry に "nonexistent-medium" を登録しないランナー
+  it("MediumExecutor が例外をスローしたとき Commission は Failed になる", async () => {
     const eventBus = new TypedEventEmitter<AtelierEvents>();
-    const emptyRegistry = {
-      getCommand: (_name: string) => undefined,
+    const mediumExecutor = {
+      async execute() {
+        throw new Error('Medium "nonexistent" is not registered.');
+      },
       listMedia: () => [],
     };
     const runner = new CommissionRunnerService({
       eventBus,
-      mediumRegistry: emptyRegistry,
+      mediumExecutor,
       defaultMedium: "nonexistent-medium",
       cwd: "/tmp/test-project",
       projectPath: "/tmp/test-project",
@@ -627,17 +582,23 @@ describe("エラーハンドリング", () => {
     const result = await runner.execute(commission, "run-021", defaultRunOptions);
 
     expect(result.status).toBe("failed");
-    expect(result.errors[0].message).toContain("Medium not found");
+    expect(result.errors[0].message).toContain("not registered");
   });
 
   it("stroke が失敗しても errors に strokeName と message が記録される", async () => {
-    const runner = createRunner();
-
-    mockRunSubprocess.mockResolvedValue({
-      stdout: "",
-      stderr: "fatal error",
-      exitCode: 2,
-      duration: 50,
+    const eventBus = new TypedEventEmitter<AtelierEvents>();
+    const mediumExecutor = {
+      async execute() {
+        return { content: "", exitCode: 2, durationMs: 50, rawStdout: "", rawStderr: "fatal error" };
+      },
+      listMedia: () => ["test-medium"],
+    };
+    const runner = new CommissionRunnerService({
+      eventBus,
+      mediumExecutor,
+      defaultMedium: "test-medium",
+      cwd: "/tmp/test-project",
+      projectPath: "/tmp/test-project",
     });
 
     const commission = makeCommission();
@@ -658,7 +619,7 @@ describe("エラーハンドリング", () => {
 
 describe("並列実行（dependsOn）", () => {
   it("dependsOn を持つストロークが存在する場合、全ストロークが実行される", async () => {
-    const runner = createRunner();
+    const { runner, mediumExecutor } = createRunner();
 
     const commission = makeCommission({
       strokes: [
@@ -671,11 +632,11 @@ describe("並列実行（dependsOn）", () => {
 
     expect(result.errors).toHaveLength(0);
     expect(result.strokesExecuted).toBe(2);
-    expect(mockRunSubprocess).toHaveBeenCalledTimes(2);
+    expect(mediumExecutor.calls).toHaveLength(2);
   });
 
-  it("dry-run=true で dependsOn があるとき runSubprocess が呼ばれない", async () => {
-    const runner = createRunner();
+  it("dry-run=true で dependsOn があるとき MediumExecutor が呼ばれない", async () => {
+    const { runner, mediumExecutor } = createRunner();
 
     const commission = makeCommission({
       strokes: [
@@ -686,12 +647,12 @@ describe("並列実行（dependsOn）", () => {
 
     const result = await runner.execute(commission, "run-031", dryRunOptions);
 
-    expect(mockRunSubprocess).not.toHaveBeenCalled();
+    expect(mediumExecutor.calls).toHaveLength(0);
     expect(result.strokesExecuted).toBe(2);
   });
 
   it("循環依存があるとき例外がスローされる", async () => {
-    const runner = createRunner();
+    const { runner } = createRunner();
 
     const commission = makeCommission({
       strokes: [
@@ -706,14 +667,24 @@ describe("並列実行（dependsOn）", () => {
   });
 
   it("依存先が失敗したとき依存するストロークも失敗扱いになる", async () => {
-    const runner = createRunner();
-
-    // base ストロークが失敗
-    mockRunSubprocess.mockResolvedValueOnce({
-      stdout: "",
-      stderr: "base failed",
-      exitCode: 1,
-      duration: 50,
+    const eventBus = new TypedEventEmitter<AtelierEvents>();
+    let callCount = 0;
+    const mediumExecutor = {
+      async execute() {
+        callCount++;
+        if (callCount === 1) {
+          return { content: "", exitCode: 1, durationMs: 50, rawStdout: "", rawStderr: "base failed" };
+        }
+        return { content: "ok", exitCode: 0, durationMs: 50, rawStdout: "ok", rawStderr: "" };
+      },
+      listMedia: () => ["test-medium"],
+    };
+    const runner = new CommissionRunnerService({
+      eventBus,
+      mediumExecutor,
+      defaultMedium: "test-medium",
+      cwd: "/tmp/test-project",
+      projectPath: "/tmp/test-project",
     });
 
     const commission = makeCommission({

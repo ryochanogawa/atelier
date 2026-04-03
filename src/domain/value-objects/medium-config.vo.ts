@@ -1,9 +1,10 @@
 /**
- * MediumConfig Value Objects
- * AIプロバイダー（Medium）へのリクエスト/レスポンス型定義。
+ * MediumInferenceConfig Value Objects
+ * AIプロバイダー（Medium）の推論設定型定義。
+ * 将来の HTTP API ベース Medium 実装で使用予定。
  */
 
-export interface MediumRequest {
+export interface MediumInferenceConfig {
   readonly model: string;
   readonly systemPrompt: string;
   readonly userPrompt: string;
@@ -13,7 +14,7 @@ export interface MediumRequest {
   readonly metadata?: Readonly<Record<string, unknown>>;
 }
 
-export interface MediumResponse {
+export interface MediumInferenceResponse {
   readonly content: string;
   readonly model: string;
   readonly usage: MediumUsage;

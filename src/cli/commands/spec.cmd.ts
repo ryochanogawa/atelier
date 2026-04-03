@@ -40,7 +40,7 @@ import {
   createSpinner,
 } from "../output.js";
 import type { ConfigPort, VcsPort, LoggerPort } from "../../application/use-cases/run-commission.use-case.js";
-import type { MediumRegistry } from "../../application/services/commission-runner.service.js";
+import { createMediumExecutor } from "../factories/medium.factory.js";
 import type { StudioConfig, MediumConfig, PaletteProviderConfig } from "../../shared/types.js";
 import { simpleGit } from "simple-git";
 
@@ -190,20 +190,6 @@ function createLoggerPort(): LoggerPort {
   };
 }
 
-async function createMediumRegistry(projectPath: string): Promise<MediumRegistry> {
-  const configPort = createConfigPort();
-  const mediaConfig = await configPort.loadMediaConfig(projectPath);
-  return {
-    getCommand(mediumName: string) {
-      const config = mediaConfig[mediumName];
-      return config ? { command: config.command, args: [...config.args] } : undefined;
-    },
-    listMedia() {
-      return Object.keys(mediaConfig);
-    },
-  };
-}
-
 // ──────────────────────────────────────────────────
 // Medium 呼び出しヘルパー
 // ──────────────────────────────────────────────────
@@ -217,13 +203,13 @@ async function runCommission(
   commissionName: string,
   canvas: Record<string, string>,
 ): Promise<void> {
-  const mediumRegistry = await createMediumRegistry(projectPath);
+  const mediumExecutor = createMediumExecutor();
   const eventBus = createEventBus();
   const useCase = new CommissionRunUseCase(
     createConfigPort(),
     createNoopVcsPort(),
     createLoggerPort(),
-    mediumRegistry,
+    mediumExecutor,
     eventBus,
   );
 

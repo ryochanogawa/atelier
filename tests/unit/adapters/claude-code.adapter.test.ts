@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { MediumRequest } from "../../../src/adapters/medium/types.js";
+import type { MediumExecuteRequest } from "../../../src/domain/ports/medium.port.js";
 
 // execa モック
 vi.mock("execa", () => {
@@ -26,7 +26,7 @@ import { ClaudeCodeAdapter } from "../../../src/adapters/medium/claude-code.adap
 
 const mockExeca = vi.mocked(execa);
 
-function makeRequest(overrides: Partial<MediumRequest> = {}): MediumRequest {
+function makeRequest(overrides: Partial<MediumExecuteRequest> = {}): MediumExecuteRequest {
   return {
     prompt: "Hello, Claude",
     workingDirectory: "/tmp",
@@ -75,13 +75,24 @@ describe("ClaudeCodeAdapter", () => {
       );
     });
 
-    it("プロンプトが引数の末尾に含まれる", async () => {
+    it("プロンプトが stdin (input) 経由で渡される", async () => {
       mockExeca.mockReturnValue(makeExecaResult({ stdout: "ok" }) as ReturnType<typeof execa>);
 
       await adapter.execute(makeRequest({ prompt: "test prompt" }));
 
+      const options = mockExeca.mock.calls[0][2] as Record<string, unknown>;
+      expect(options.input).toBe("test prompt");
+    });
+
+    it("allowedTools が指定された場合 --allowedTools 引数が含まれる", async () => {
+      mockExeca.mockReturnValue(makeExecaResult({ stdout: "ok" }) as ReturnType<typeof execa>);
+
+      await adapter.execute(makeRequest({ allowedTools: ["Edit", "Read"] }));
+
       const args = mockExeca.mock.calls[0][1] as string[];
-      expect(args[args.length - 1]).toBe("test prompt");
+      expect(args).toContain("--allowedTools");
+      expect(args).toContain("Edit");
+      expect(args).toContain("Read");
     });
 
     it("allowEdit: false の場合 --dangerously-skip-permissions 引数を含まない", async () => {

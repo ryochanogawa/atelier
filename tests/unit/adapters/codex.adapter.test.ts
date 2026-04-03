@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { MediumRequest } from "../../../src/adapters/medium/types.js";
+import type { MediumExecuteRequest } from "../../../src/domain/ports/medium.port.js";
 
 // execa モック
 vi.mock("execa", () => {
@@ -12,7 +12,7 @@ import { CodexAdapter } from "../../../src/adapters/medium/codex.adapter.js";
 
 const mockExeca = vi.mocked(execa);
 
-function makeRequest(overrides: Partial<MediumRequest> = {}): MediumRequest {
+function makeRequest(overrides: Partial<MediumExecuteRequest> = {}): MediumExecuteRequest {
   return {
     prompt: "Implement a function",
     workingDirectory: "/tmp",
@@ -67,36 +67,32 @@ describe("CodexAdapter", () => {
     });
   });
 
-  describe("buildArgs - approval mode", () => {
-    it("allowEdit: false の場合 approval mode が suggest になる", async () => {
+  describe("buildArgs - full-auto mode", () => {
+    it("allowEdit: false の場合 --full-auto フラグが含まれない", async () => {
       mockExeca.mockReturnValue(makeExecaResult({ stdout: "output" }) as ReturnType<typeof execa>);
 
       await adapter.execute(makeRequest({ allowEdit: false }));
 
       const args = mockExeca.mock.calls[0][1] as string[];
-      const approvalModeIdx = args.indexOf("--approval-mode");
-      expect(approvalModeIdx).toBeGreaterThanOrEqual(0);
-      expect(args[approvalModeIdx + 1]).toBe("suggest");
+      expect(args).not.toContain("--full-auto");
     });
 
-    it("allowEdit: true の場合 approval mode が auto-edit になる", async () => {
+    it("allowEdit: true の場合 --full-auto フラグが含まれる", async () => {
       mockExeca.mockReturnValue(makeExecaResult({ stdout: "output" }) as ReturnType<typeof execa>);
 
       await adapter.execute(makeRequest({ allowEdit: true }));
 
       const args = mockExeca.mock.calls[0][1] as string[];
-      const approvalModeIdx = args.indexOf("--approval-mode");
-      expect(approvalModeIdx).toBeGreaterThanOrEqual(0);
-      expect(args[approvalModeIdx + 1]).toBe("auto-edit");
+      expect(args).toContain("--full-auto");
     });
 
-    it("--quiet フラグが含まれる", async () => {
+    it("exec サブコマンドで実行される", async () => {
       mockExeca.mockReturnValue(makeExecaResult({ stdout: "output" }) as ReturnType<typeof execa>);
 
       await adapter.execute(makeRequest());
 
       const args = mockExeca.mock.calls[0][1] as string[];
-      expect(args).toContain("--quiet");
+      expect(args[0]).toBe("exec");
     });
   });
 

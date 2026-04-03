@@ -20,7 +20,7 @@ import {
   createSpinner,
 } from "../output.js";
 import type { ConfigPort, VcsPort, LoggerPort } from "../../application/use-cases/run-commission.use-case.js";
-import type { MediumRegistry } from "../../application/services/commission-runner.service.js";
+import { createMediumExecutor } from "../factories/medium.factory.js";
 import type { StudioConfig, MediumConfig } from "../../shared/types.js";
 
 /**
@@ -95,24 +95,6 @@ function createLoggerPort(): LoggerPort {
   };
 }
 
-/**
- * MediumRegistry を studio.yaml から構築する。
- */
-async function createMediumRegistry(projectPath: string): Promise<MediumRegistry> {
-  const configPort = createConfigPort();
-  const mediaConfig = await configPort.loadMediaConfig(projectPath);
-
-  return {
-    getCommand(mediumName: string) {
-      const config = mediaConfig[mediumName];
-      return config ? { command: config.command, args: config.args } : undefined;
-    },
-    listMedia() {
-      return Object.keys(mediaConfig);
-    },
-  };
-}
-
 export function createIssueCommand(): Command {
   const issue = new Command("issue")
     .description("GitHub Issue 連携");
@@ -132,14 +114,14 @@ export function createIssueCommand(): Command {
 
         const commissionName = opts.commission ?? "default";
 
-        const mediumRegistry = await createMediumRegistry(projectPath);
+        const mediumExecutor = createMediumExecutor();
         const eventBus = createEventBus();
         const useCase = new RunIssueUseCase(
           issueAdapter,
           createConfigPort(),
           createVcsPort(),
           createLoggerPort(),
-          mediumRegistry,
+          mediumExecutor,
           eventBus,
         );
 

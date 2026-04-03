@@ -40,7 +40,7 @@ import {
   InteractiveSessionUseCase,
   type ConversationMessage,
 } from "../../../src/application/use-cases/interactive-session.use-case.js";
-import type { MediumPort, MediumResponse } from "../../../src/adapters/medium/types.js";
+import type { MediumPort, MediumExecuteResponse } from "../../../src/domain/ports/medium.port.js";
 
 // ---- テスト用ヘルパー ----
 
@@ -54,7 +54,7 @@ function createMockMedium(responseContent = "AI response"): MediumPort {
       exitCode: 0,
       rawStdout: responseContent,
       rawStderr: "",
-    } satisfies MediumResponse),
+    } satisfies MediumExecuteResponse),
     abort: vi.fn().mockResolvedValue(undefined),
   };
 }

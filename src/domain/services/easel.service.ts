@@ -9,7 +9,7 @@ import type { RunContext } from "../aggregates/run-context.aggregate.js";
 import type { Stroke } from "../models/stroke.model.js";
 import type { MediumPort } from "../ports/medium.port.js";
 import type { LoggerPort } from "../ports/logger.port.js";
-import type { MediumRequest, MediumResponse } from "../value-objects/medium-config.vo.js";
+import type { MediumExecuteRequest, MediumExecuteResponse } from "../ports/medium.port.js";
 import { StrokeStatus } from "../value-objects/stroke-status.vo.js";
 import { CommissionStatus } from "../value-objects/commission-status.vo.js";
 import { CritiqueVerdict } from "../value-objects/critique-verdict.vo.js";
@@ -414,13 +414,15 @@ export class Easel {
       stroke.transitionTo(StrokeStatus.Executing);
 
       const medium = this.deps.resolveMedium(stroke.medium);
-      const request: MediumRequest = {
-        model: stroke.medium,
+      const request: MediumExecuteRequest = {
+        prompt: composed.userPrompt,
         systemPrompt: composed.systemPrompt,
-        userPrompt: composed.userPrompt,
+        workingDirectory: process.cwd(),
+        allowEdit: false,
+        timeoutMs: 600_000,
       };
 
-      const response: MediumResponse = await medium.execute(request);
+      const response: MediumExecuteResponse = await medium.execute(request);
 
       // Store outputs in canvas
       for (const outputKey of stroke.outputs) {

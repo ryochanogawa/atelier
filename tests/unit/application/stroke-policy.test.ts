@@ -10,47 +10,31 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ---- vi.hoisted でモック関数を先に定義 ----
-const mockRunSubprocess = vi.hoisted(() => vi.fn());
 const mockFileExists = vi.hoisted(() => vi.fn());
 const mockReadTextFile = vi.hoisted(() => vi.fn());
-const mockMkdtemp = vi.hoisted(() => vi.fn());
-const mockWriteFile = vi.hoisted(() => vi.fn());
-const mockRm = vi.hoisted(() => vi.fn());
 
 // ---- インフラレイヤーのモック ----
-vi.mock("../../../src/infrastructure/process/subprocess.js", () => ({
-  runSubprocess: mockRunSubprocess,
-}));
-
 vi.mock("../../../src/infrastructure/fs/file-system.js", () => ({
   fileExists: mockFileExists,
   readTextFile: mockReadTextFile,
-}));
-
-vi.mock("node:fs/promises", () => ({
-  default: {
-    mkdtemp: mockMkdtemp,
-    writeFile: mockWriteFile,
-    rm: mockRm,
-  },
 }));
 
 import { CommissionRunnerService } from "../../../src/application/services/commission-runner.service.js";
 import { TypedEventEmitter } from "../../../src/infrastructure/event-bus/event-emitter.js";
 import type { AtelierEvents } from "../../../src/infrastructure/event-bus/event-emitter.js";
 import type { CommissionDefinition, RunOptions } from "../../../src/shared/types.js";
-import { createMockMediumRegistry } from "../../helpers/mock-medium.js";
+import { createMockMediumExecutor } from "../../helpers/mock-medium.js";
 
 // ---- ヘルパー ----
 
 function createRunner() {
   const eventBus = new TypedEventEmitter<AtelierEvents>();
-  const mediumRegistry = createMockMediumRegistry(
+  const mediumExecutor = createMockMediumExecutor(
     new Map([["test-medium", "mock response"]]),
   );
   return new CommissionRunnerService({
     eventBus,
-    mediumRegistry,
+    mediumExecutor,
     defaultMedium: "test-medium",
     cwd: "/tmp/test-project",
     projectPath: "/tmp/test-project",
@@ -85,15 +69,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockFileExists.mockResolvedValue(false);
   mockReadTextFile.mockResolvedValue("");
-  mockRunSubprocess.mockResolvedValue({
-    stdout: "mock output",
-    stderr: "",
-    exitCode: 0,
-    duration: 100,
-  });
-  mockMkdtemp.mockResolvedValue("/tmp/atelier-test-123");
-  mockWriteFile.mockResolvedValue(undefined);
-  mockRm.mockResolvedValue(undefined);
 });
 
 afterEach(() => {

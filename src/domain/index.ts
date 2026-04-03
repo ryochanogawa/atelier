@@ -33,8 +33,8 @@ export {
 } from "./value-objects/critique-verdict.vo.js";
 
 export type {
-  MediumRequest,
-  MediumResponse,
+  MediumInferenceConfig,
+  MediumInferenceResponse,
   MediumUsage,
   MediumFinishReason,
 } from "./value-objects/medium-config.vo.js";
@@ -93,7 +93,12 @@ export {
 } from "./services/commission-selector.service.js";
 
 // Ports
-export type { MediumPort } from "./ports/medium.port.js";
+export type {
+  MediumPort,
+  MediumAvailability,
+  MediumExecuteRequest,
+  MediumExecuteResponse,
+} from "./ports/medium.port.js";
 export type { VcsPort } from "./ports/vcs.port.js";
 export type { LoggerPort } from "./ports/logger.port.js";
 export type {

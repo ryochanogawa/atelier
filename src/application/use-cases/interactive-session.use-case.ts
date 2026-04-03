@@ -6,7 +6,7 @@
  */
 
 import path from "node:path";
-import type { MediumPort, MediumRequest, MediumResponse } from "../../adapters/medium/types.js";
+import type { MediumPort, MediumExecuteRequest, MediumExecuteResponse } from "../../domain/ports/medium.port.js";
 import { QueueTaskUseCase } from "./queue-task.use-case.js";
 import { DEFAULT_TIMEOUT_MS, SESSIONS_DIR, POLICIES_DIR } from "../../shared/constants.js";
 import { resolveAtelierPath } from "../../shared/utils.js";
@@ -85,7 +85,7 @@ export class InteractiveSessionUseCase {
     // 会話履歴をコンテキストとして含めたプロンプトを構築
     const contextPrompt = this.buildContextPrompt(userMessage);
 
-    const request: MediumRequest = {
+    const request: MediumExecuteRequest = {
       prompt: contextPrompt,
       workingDirectory: this.workingDirectory,
       allowEdit: false,
@@ -93,7 +93,7 @@ export class InteractiveSessionUseCase {
       timeoutMs: DEFAULT_TIMEOUT_MS,
     };
 
-    const response: MediumResponse = await this.medium.execute(request);
+    const response: MediumExecuteResponse = await this.medium.execute(request);
 
     this.history.push({
       role: "assistant",
