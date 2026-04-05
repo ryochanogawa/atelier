@@ -55,6 +55,13 @@ export {
   type SpreadsheetWriteResult,
 } from "./spreadsheet/index.js";
 
+// Presentation adapters
+export {
+  GoogleSlidesAdapter,
+  type PresentationPort,
+  type PresentationWriteResult,
+} from "./presentation/index.js";
+
 // Theme adapters
 export {
   BIOHAZARD_THEME,

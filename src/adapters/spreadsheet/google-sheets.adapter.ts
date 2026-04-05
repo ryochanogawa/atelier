@@ -1,10 +1,7 @@
 /**
  * Google Sheets Adapter
  * Google Sheets API v4を使用してスプレッドシートを作成・書き込みする。
- *
- * 認証方法:
- * - GOOGLE_SERVICE_ACCOUNT_KEY 環境変数: サービスアカウントJSONキーファイルのパス
- * - GOOGLE_APPLICATION_CREDENTIALS 環境変数: Google Cloud標準の認証
+ * 認証は共通 OAuth ヘルパー（infrastructure/google/oauth.ts）を使用。
  */
 
 import type { SpreadsheetPort, SpreadsheetWriteResult } from "../../domain/ports/spreadsheet.port.js";
@@ -19,6 +16,7 @@ import type {
   RgbaColor,
   BorderStyle,
 } from "../../domain/value-objects/sheet-operations.vo.js";
+import { getGoogleAuthClient } from "../../infrastructure/google/oauth.js";
 
 // googleapis は動的インポートで遅延読み込み
 type SheetsApi = {
@@ -95,25 +93,7 @@ export class GoogleSheetsAdapter implements SpreadsheetPort {
     if (this.sheetsApi) return this.sheetsApi;
 
     const { google } = await import("googleapis");
-
-    const keyPath =
-      process.env.GOOGLE_SERVICE_ACCOUNT_KEY ??
-      process.env.GOOGLE_APPLICATION_CREDENTIALS;
-
-    if (!keyPath) {
-      throw new Error(
-        "Google Sheets API の認証情報が設定されていません。\n" +
-        "以下のいずれかの環境変数を設定してください:\n" +
-        "  GOOGLE_SERVICE_ACCOUNT_KEY=<サービスアカウントJSONキーファイルのパス>\n" +
-        "  GOOGLE_APPLICATION_CREDENTIALS=<認証情報ファイルのパス>",
-      );
-    }
-
-    const auth = new google.auth.GoogleAuth({
-      keyFile: keyPath,
-      scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-    });
-
+    const auth = await getGoogleAuthClient();
     this.sheetsApi = google.sheets({ version: "v4", auth }) as unknown as SheetsApi;
     return this.sheetsApi;
   }
@@ -288,10 +268,14 @@ function buildCellFormat(fmt: CellFormat): Record<string, unknown> {
 
   // ボーダー
   const borders: Record<string, unknown> = {};
-  if (fmt.borderTop) borders.top = toBorderApi(fmt.borderTop);
-  if (fmt.borderBottom) borders.bottom = toBorderApi(fmt.borderBottom);
-  if (fmt.borderLeft) borders.left = toBorderApi(fmt.borderLeft);
-  if (fmt.borderRight) borders.right = toBorderApi(fmt.borderRight);
+  const topBorder = fmt.borderTop ? toBorderApi(fmt.borderTop) : null;
+  const bottomBorder = fmt.borderBottom ? toBorderApi(fmt.borderBottom) : null;
+  const leftBorder = fmt.borderLeft ? toBorderApi(fmt.borderLeft) : null;
+  const rightBorder = fmt.borderRight ? toBorderApi(fmt.borderRight) : null;
+  if (topBorder) borders.top = topBorder;
+  if (bottomBorder) borders.bottom = bottomBorder;
+  if (leftBorder) borders.left = leftBorder;
+  if (rightBorder) borders.right = rightBorder;
   if (Object.keys(borders).length > 0) result.borders = borders;
 
   return result;
@@ -326,8 +310,8 @@ function toApiColor(color: RgbaColor): Record<string, number> {
   };
 }
 
-function toBorderApi(style: BorderStyle): Record<string, unknown> {
-  if (style === "none") return {};
+function toBorderApi(style: BorderStyle): Record<string, unknown> | null {
+  if (style === "none") return null;
   const styleMap: Record<string, string> = {
     thin: "SOLID",
     medium: "SOLID_MEDIUM",

@@ -568,14 +568,14 @@ export function createSpecCommand(): Command {
   spec
     .command("client [description]")
     .description("顧客向け要件定義書を生成し、スプレッドシートまたはJSONとして出力する")
-    .option("--output <format>", "出力形式 (sheets | json)", "json")
+    .option("--output <format>", "出力形式 (sheets | slides | json)", "json")
     .option("--spec <id>", "既存specのIDから要件を読み込む")
     .action(async (description: string | undefined, opts: { output: string; spec?: string }) => {
       const projectPath = process.cwd();
       const outputFormat = opts.output;
 
-      if (outputFormat !== "json" && outputFormat !== "sheets") {
-        printError("--output には 'json' または 'sheets' を指定してください");
+      if (outputFormat !== "json" && outputFormat !== "sheets" && outputFormat !== "slides") {
+        printError("--output には 'json', 'sheets', または 'slides' を指定してください");
         process.exitCode = 1;
         return;
       }
@@ -668,6 +668,19 @@ export function createSpecCommand(): Command {
           await writeTextFile(jsonPath, JSON.stringify(dto, null, 2));
           spinner.stop();
           printSuccess(`要件定義書 JSON を保存しました: .atelier/specs/${specDirName}/client-requirements.json`);
+        } else if (outputFormat === "slides") {
+          // スライド出力
+          spinner.text = "プレゼンテーションを作成中...";
+          const { GoogleSlidesAdapter } = await import(
+            "../../adapters/presentation/google-slides.adapter.js"
+          );
+
+          const adapter = new GoogleSlidesAdapter();
+          const result = await adapter.create(dto);
+
+          spinner.stop();
+          printSuccess("プレゼンテーションを作成しました");
+          printInfo(`URL: ${result.presentationUrl}`);
         } else {
           // スプレッドシート出力
           spinner.text = "スプレッドシートを作成中...";

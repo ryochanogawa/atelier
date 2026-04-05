@@ -16,27 +16,89 @@ import type {
   RgbaColor,
 } from "../../domain/value-objects/sheet-operations.vo.js";
 
-// ── 定数 ──
+// ── NTTコミュニケーションズ スタイル定数 ──
 
-const COLOR_HEADER_BG: RgbaColor = { red: 0.2, green: 0.27, blue: 0.55 };
-const COLOR_HEADER_TEXT: RgbaColor = { red: 1, green: 1, blue: 1 };
-const COLOR_SUBHEADER_BG: RgbaColor = { red: 0.85, green: 0.92, blue: 0.98 };
-const COLOR_LABEL_BG: RgbaColor = { red: 0.93, green: 0.93, blue: 0.93 };
+/** #99ccff — NTTヘッダー背景（濃い水色） */
+const COLOR_HEADER_BG: RgbaColor = { red: 0.6, green: 0.8, blue: 1.0 };
+/** #cfe2f3 — セクションヘッダー背景（薄い水色） */
+const COLOR_SECTION_BG: RgbaColor = { red: 0.81, green: 0.89, blue: 0.95 };
+/** #fce5cd — 強調/サブヘッダー背景（薄いオレンジ） */
+const COLOR_ACCENT_BG: RgbaColor = { red: 0.99, green: 0.9, blue: 0.8 };
+/** 黒テキスト */
+const COLOR_BLACK: RgbaColor = { red: 0, green: 0, blue: 0 };
+/** 白背景 */
 const COLOR_WHITE: RgbaColor = { red: 1, green: 1, blue: 1 };
+
+/** スイムレーンアクター列の色（NTTスタイル） */
 const COLOR_ACTOR_COLORS: RgbaColor[] = [
-  { red: 0.92, green: 0.96, blue: 1 },
-  { red: 1, green: 0.95, blue: 0.88 },
-  { red: 0.9, green: 1, blue: 0.9 },
-  { red: 1, green: 0.92, blue: 0.92 },
-  { red: 0.95, green: 0.92, blue: 1 },
+  { red: 0.99, green: 0.9, blue: 0.8 },   // #fce5cd — 薄いオレンジ
+  { red: 0.92, green: 0.82, blue: 0.86 },  // #ead1dc — 薄いピンク
+  { red: 0.85, green: 0.92, blue: 0.83 },  // #d9ead3 — 薄い緑
+  { red: 0.85, green: 0.82, blue: 0.91 },  // #d9d2e9 — 薄い紫
+  { red: 0.96, green: 0.8, blue: 0.8 },    // #f4cccc — 薄い赤
+  { red: 0.81, green: 0.89, blue: 0.95 },  // #cfe2f3 — 薄い水色
 ];
 
 const DEFAULT_COL_WIDTH = 200;
 const SWIMLANE_COL_WIDTH = 220;
 const NARROW_COL_WIDTH = 80;
 const WIDE_COL_WIDTH = 300;
-const HEADER_ROW_HEIGHT = 36;
-const DEFAULT_ROW_HEIGHT = 28;
+const HEADER_ROW_HEIGHT = 28;
+const DEFAULT_ROW_HEIGHT = 24;
+
+// ── ヘルパー: NTTスタイル罫線付きセルフォーマット ──
+
+/** ヘッダーセルフォーマット（#99ccff背景、黒テキスト、中央揃え、実線ボーダー） */
+function headerFormat(row: number, col: number, extra?: Partial<CellFormat>): CellFormat {
+  return {
+    row, col,
+    bold: false,
+    fontSize: 10,
+    bgColor: COLOR_HEADER_BG,
+    textColor: COLOR_BLACK,
+    hAlign: "center",
+    vAlign: "middle",
+    borderTop: "thin",
+    borderBottom: "thin",
+    borderLeft: "thin",
+    borderRight: "thin",
+    ...extra,
+  };
+}
+
+/** データセルフォーマット（白背景、実線ボーダー） */
+function dataFormat(row: number, col: number, extra?: Partial<CellFormat>): CellFormat {
+  return {
+    row, col,
+    fontSize: 10,
+    bgColor: COLOR_WHITE,
+    textColor: COLOR_BLACK,
+    vAlign: "middle",
+    borderTop: "thin",
+    borderBottom: "thin",
+    borderLeft: "thin",
+    borderRight: "thin",
+    ...extra,
+  };
+}
+
+/** セクション見出しフォーマット（#99ccff背景、実線ボーダー） */
+function sectionHeaderFormat(row: number, col: number, endCol?: number): CellFormat {
+  return {
+    row, col,
+    ...(endCol !== undefined ? { endCol } : {}),
+    bold: false,
+    fontSize: 10,
+    bgColor: COLOR_HEADER_BG,
+    textColor: COLOR_BLACK,
+    hAlign: "center",
+    vAlign: "middle",
+    borderTop: "thin",
+    borderBottom: "thin",
+    borderLeft: "thin",
+    borderRight: "thin",
+  };
+}
 
 // ── メインエントリポイント ──
 
@@ -70,108 +132,347 @@ export function formatClientRequirements(
   };
 }
 
-// ── 表紙シート ──
+// ── 表紙シート（NTTコミュニケーションズ形式） ──
 
 function buildCoverSheet(data: ClientRequirementsDto): SheetDefinition {
   const cells: CellValue[] = [];
   const merges: MergeRange[] = [];
   const formats: CellFormat[] = [];
+  const rowHeights: RowHeight[] = [];
   let row = 0;
 
-  // タイトルヘッダー
-  cells.push({ row, col: 0, value: data.projectInfo.documentTitle || "要件定義書" });
-  merges.push({ startRow: row, endRow: row, startCol: 0, endCol: 5 });
-  formats.push({
-    row, col: 0, endRow: row, endCol: 5,
-    bold: true, fontSize: 18,
-    bgColor: COLOR_HEADER_BG, textColor: COLOR_HEADER_TEXT,
-    hAlign: "center", vAlign: "middle",
-    borderBottom: "medium",
-  });
-  row += 2;
-
-  // メタ情報テーブル
-  const metaFields: [string, string][] = [
-    ["プロジェクト名", data.projectInfo.projectName],
-    ["バージョン", data.projectInfo.version],
-    ["作成者", data.projectInfo.author],
-    ["作成日", data.projectInfo.createdDate],
-    ["更新日", data.projectInfo.updatedDate],
-  ];
-
-  for (const [label, value] of metaFields) {
-    cells.push({ row, col: 1, value: label });
-    cells.push({ row, col: 2, value });
-    merges.push({ startRow: row, endRow: row, startCol: 2, endCol: 4 });
-    formats.push({
-      row, col: 1,
-      bold: true, bgColor: COLOR_LABEL_BG,
-      borderTop: "thin", borderBottom: "thin", borderLeft: "thin", borderRight: "thin",
-    });
-    formats.push({
-      row, col: 2, endCol: 4,
-      borderTop: "thin", borderBottom: "thin", borderLeft: "thin", borderRight: "thin",
-    });
-    row++;
+  // ──────────────────────────────────────────────
+  // Row 0: ヘッダーラベル行
+  //   管理ID | プロジェクト名 | サブシステム名 | タイトル | PG | 査閲 | 作業項目
+  // ──────────────────────────────────────────────
+  const headerLabels = ["管理ID", "プロジェクト名", "サブシステム名", "タイトル", "PG", "査閲", "作業項目"];
+  for (let c = 0; c < headerLabels.length; c++) {
+    cells.push({ row, col: c, value: headerLabels[c] });
+    formats.push(headerFormat(row, c));
   }
-  row += 2;
+  // 作業項目は col 6-7 にマージ
+  merges.push({ startRow: row, endRow: row, startCol: 6, endCol: 7 });
+  rowHeights.push({ row, height: HEADER_ROW_HEIGHT });
+  row++;
 
-  // 処理概要
+  // ──────────────────────────────────────────────
+  // Row 1: 値行
+  //   (空) | プロジェクト名 | サブシステム名 | タイトル | (空) | (空) | (空)
+  // ──────────────────────────────────────────────
+  cells.push({ row, col: 1, value: data.projectInfo.projectName });
+  cells.push({ row, col: 2, value: "" });
+  cells.push({ row, col: 3, value: data.projectInfo.documentTitle || "要件定義書" });
+  for (let c = 0; c < 8; c++) {
+    formats.push(dataFormat(row, c, {
+      hAlign: "center",
+      fontSize: c === 3 ? 14 : c === 1 ? 12 : 10,
+    }));
+  }
+  rowHeights.push({ row, height: HEADER_ROW_HEIGHT });
+  row++;
+
+  // ──────────────────────────────────────────────
+  // Row 2: 作成者行
+  // ──────────────────────────────────────────────
+  cells.push({ row, col: 0, value: "作成者" });
+  formats.push(headerFormat(row, 0));
+  cells.push({ row, col: 1, value: data.projectInfo.author });
+  for (let c = 1; c < 8; c++) {
+    formats.push(dataFormat(row, c));
+  }
+  rowHeights.push({ row, height: HEADER_ROW_HEIGHT });
+  row++;
+
+  // ──────────────────────────────────────────────
+  // Row 3: 空行
+  // ──────────────────────────────────────────────
+  // 空行はフォーマットなし（罫線不要）
+  row++;
+
+  // ──────────────────────────────────────────────
+  // Row 4: セパレータ（大きな空行）
+  // ──────────────────────────────────────────────
+  rowHeights.push({ row, height: 8 });
+  row++;
+
+  // ──────────────────────────────────────────────
+  // Row 5: ＩＤ－ＮＯ | タイプ | 実行環境 | バージョン | 版 | 更新日付 | 作成日付 | ページ
+  // ──────────────────────────────────────────────
+  const idHeaders = ["ＩＤ－ＮＯ", "タイプ", "実行環境", "バージョン", "版", "更新日付", "作成日付", "ﾍﾟｰｼﾞ"];
+  for (let c = 0; c < idHeaders.length; c++) {
+    cells.push({ row, col: c, value: idHeaders[c] });
+    formats.push(headerFormat(row, c));
+  }
+  rowHeights.push({ row, height: HEADER_ROW_HEIGHT });
+  row++;
+
+  // ──────────────────────────────────────────────
+  // Row 6: 概要 + 値行
+  //   概要 | ■画面　□バッチ処理 | (実行環境) | (空) | 版 | 更新日付 | 作成日付 | ページ
+  // ──────────────────────────────────────────────
+  cells.push({ row, col: 0, value: "概要" });
+  formats.push(headerFormat(row, 0));
+  cells.push({ row, col: 1, value: "■画面　□バッチ処理" });
+  formats.push(dataFormat(row, 1, { hAlign: "center", fontSize: 11 }));
+  cells.push({ row, col: 2, value: "" });
+  formats.push(dataFormat(row, 2, { hAlign: "center" }));
+  cells.push({ row, col: 3, value: "" });
+  formats.push(dataFormat(row, 3, { hAlign: "center" }));
+  cells.push({ row, col: 4, value: data.projectInfo.version });
+  formats.push(dataFormat(row, 4, { hAlign: "center" }));
+  cells.push({ row, col: 5, value: data.projectInfo.updatedDate });
+  formats.push(dataFormat(row, 5, { hAlign: "center", fontSize: 8 }));
+  cells.push({ row, col: 6, value: data.projectInfo.createdDate });
+  formats.push(dataFormat(row, 6, { hAlign: "center", fontSize: 8 }));
+  cells.push({ row, col: 7, value: "1/1" });
+  formats.push(dataFormat(row, 7, { hAlign: "center", fontSize: 8 }));
+  row++;
+
+  // ──────────────────────────────────────────────
+  // Row 7: 空行
+  // ──────────────────────────────────────────────
+  row++;
+
+  // ──────────────────────────────────────────────
+  // Row 8: 設定内容セクション
+  // ──────────────────────────────────────────────
+  cells.push({ row, col: 3, value: "設定内容" });
+  formats.push(dataFormat(row, 3, { hAlign: "center" }));
+  for (let c = 0; c < 8; c++) {
+    if (c !== 3) formats.push(dataFormat(row, c));
+  }
+  row++;
+
+  // ──────────────────────────────────────────────
+  // Row 9: 空行
+  // ──────────────────────────────────────────────
+  row++;
+
+  // ──────────────────────────────────────────────
+  // Row 10: 本番URL（もしprocessOverviewがあれば代わりに表示）
+  // ──────────────────────────────────────────────
   if (data.processOverview) {
-    cells.push({ row, col: 0, value: "処理概要" });
-    merges.push({ startRow: row, endRow: row, startCol: 0, endCol: 5 });
-    formats.push({
-      row, col: 0, endCol: 5,
-      bold: true, fontSize: 13, bgColor: COLOR_SUBHEADER_BG,
-      borderBottom: "medium",
-    });
+    cells.push({ row, col: 0, value: "概要" });
+    formats.push(headerFormat(row, 0));
+    cells.push({ row, col: 1, value: data.processOverview });
+    merges.push({ startRow: row, endRow: row, startCol: 1, endCol: 7 });
+    formats.push(dataFormat(row, 1, { endCol: 7, wrapText: true, vAlign: "top" }));
     row++;
-
-    cells.push({ row, col: 0, value: data.processOverview });
-    merges.push({ startRow: row, endRow: row + 3, startCol: 0, endCol: 5 });
-    formats.push({
-      row, col: 0, endRow: row + 3, endCol: 5,
-      wrapText: true, vAlign: "top",
-      borderTop: "thin", borderBottom: "thin", borderLeft: "thin", borderRight: "thin",
-    });
-    row += 5;
   }
 
-  // 関連設定
-  if (data.relatedSettings.length > 0) {
-    cells.push({ row, col: 0, value: "関連設定" });
-    merges.push({ startRow: row, endRow: row, startCol: 0, endCol: 5 });
-    formats.push({
-      row, col: 0, endCol: 5,
-      bold: true, fontSize: 13, bgColor: COLOR_SUBHEADER_BG,
-      borderBottom: "medium",
-    });
-    row++;
+  // ──────────────────────────────────────────────
+  // 空行
+  // ──────────────────────────────────────────────
+  row++;
 
-    const settingHeaders = ["設定項目", "設定場所", "備考"];
-    for (let c = 0; c < settingHeaders.length; c++) {
-      cells.push({ row, col: c, value: settingHeaders[c] });
-      formats.push({
-        row, col: c,
-        bold: true, bgColor: COLOR_LABEL_BG,
-        borderTop: "thin", borderBottom: "thin", borderLeft: "thin", borderRight: "thin",
-      });
+  // ──────────────────────────────────────────────
+  // スケジュールセクション（設計・実装・テスト）
+  // ──────────────────────────────────────────────
+  const scheduleItems = ["設計", "実装", "単体テスト", "結合テスト", "受入テスト"];
+  for (const item of scheduleItems) {
+    const reviewLabel = item === "設計" || item === "実装" ? "レビュー" : "備考";
+    cells.push({ row, col: 0, value: item });
+    formats.push(headerFormat(row, 0));
+    cells.push({ row, col: 2, value: "開始" });
+    formats.push(headerFormat(row, 2));
+    cells.push({ row, col: 4, value: "終了" });
+    formats.push(headerFormat(row, 4));
+    cells.push({ row, col: 6, value: reviewLabel });
+    formats.push(headerFormat(row, 6));
+    // Value cells
+    for (const c of [1, 3, 5, 7]) {
+      formats.push(dataFormat(row, c));
     }
     row++;
+    // 空行
+    row++;
+  }
 
-    for (const setting of data.relatedSettings) {
-      cells.push({ row, col: 0, value: setting.settingItem });
-      cells.push({ row, col: 1, value: setting.settingLocation });
-      cells.push({ row, col: 2, value: setting.remarks });
-      for (let c = 0; c < 3; c++) {
-        formats.push({
-          row, col: c,
-          borderTop: "thin", borderBottom: "thin", borderLeft: "thin", borderRight: "thin",
-        });
+  // ──────────────────────────────────────────────
+  // セパレータ（大きな空行）
+  // ──────────────────────────────────────────────
+  rowHeights.push({ row, height: 8 });
+  row++;
+
+  // ──────────────────────────────────────────────
+  // 入力パラメータセクション
+  // ──────────────────────────────────────────────
+  cells.push({ row, col: 0, value: "入力パラメータ" });
+  merges.push({ startRow: row, endRow: row, startCol: 0, endCol: 1 });
+  formats.push(sectionHeaderFormat(row, 0, 1));
+  row++;
+
+  const paramHeaders = ["Ｎｏ", "データＩＤ", "項　　目　　名", "桁数", "型", "摘　　　　　要"];
+  for (let c = 0; c < paramHeaders.length; c++) {
+    cells.push({ row, col: c, value: paramHeaders[c] });
+    formats.push(headerFormat(row, c));
+  }
+  // 摘要は col 5-7 にマージ
+  merges.push({ startRow: row, endRow: row, startCol: 5, endCol: 7 });
+  row++;
+
+  if (data.inputParameters.length > 0) {
+    for (const param of data.inputParameters) {
+      cells.push({ row, col: 0, value: param.no });
+      cells.push({ row, col: 1, value: param.dataId });
+      cells.push({ row, col: 2, value: param.itemName });
+      cells.push({ row, col: 3, value: param.digits });
+      cells.push({ row, col: 4, value: param.type });
+      cells.push({ row, col: 5, value: param.remarks });
+      merges.push({ startRow: row, endRow: row, startCol: 5, endCol: 7 });
+      for (let c = 0; c < 6; c++) {
+        formats.push(dataFormat(row, c));
+      }
+      row++;
+    }
+  } else {
+    // 空の10行を確保（NTT形式）
+    for (let i = 1; i <= 10; i++) {
+      cells.push({ row, col: 0, value: i });
+      merges.push({ startRow: row, endRow: row, startCol: 5, endCol: 7 });
+      for (let c = 0; c < 6; c++) {
+        formats.push(dataFormat(row, c));
       }
       row++;
     }
   }
+
+  // ──────────────────────────────────────────────
+  // 関連設定セクション
+  // ──────────────────────────────────────────────
+  cells.push({ row, col: 0, value: "関連設定" });
+  merges.push({ startRow: row, endRow: row, startCol: 0, endCol: 1 });
+  formats.push(sectionHeaderFormat(row, 0, 1));
+  row++;
+
+  const settingHeaders = ["Ｎｏ", "設定項目", "設定場所"];
+  for (let c = 0; c < settingHeaders.length; c++) {
+    cells.push({ row, col: c, value: settingHeaders[c] });
+    formats.push(headerFormat(row, c));
+  }
+  // 設定場所は col 2-3 にマージ
+  merges.push({ startRow: row, endRow: row, startCol: 2, endCol: 3 });
+  row++;
+
+  if (data.relatedSettings.length > 0) {
+    for (let i = 0; i < data.relatedSettings.length; i++) {
+      const setting = data.relatedSettings[i];
+      cells.push({ row, col: 0, value: i + 1 });
+      cells.push({ row, col: 1, value: setting.settingItem });
+      cells.push({ row, col: 2, value: setting.settingLocation });
+      merges.push({ startRow: row, endRow: row, startCol: 2, endCol: 3 });
+      for (let c = 0; c < 4; c++) {
+        formats.push(dataFormat(row, c));
+      }
+      row++;
+    }
+  } else {
+    for (let i = 1; i <= 10; i++) {
+      cells.push({ row, col: 0, value: i });
+      merges.push({ startRow: row, endRow: row, startCol: 2, endCol: 3 });
+      for (let c = 0; c < 4; c++) {
+        formats.push(dataFormat(row, c));
+      }
+      row++;
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  // 備考セクション
+  // ──────────────────────────────────────────────
+  cells.push({ row, col: 0, value: "備考" });
+  merges.push({ startRow: row, endRow: row, startCol: 0, endCol: 1 });
+  formats.push(sectionHeaderFormat(row, 0, 1));
+  row++;
+  // 備考の空行
+  merges.push({ startRow: row, endRow: row, startCol: 0, endCol: 7 });
+  formats.push(dataFormat(row, 0, { endCol: 7, wrapText: true }));
+  row++;
+  row++;
+
+  // ──────────────────────────────────────────────
+  // セパレータ（大きな空行）
+  // ──────────────────────────────────────────────
+  rowHeights.push({ row, height: 8 });
+  row++;
+
+  // ──────────────────────────────────────────────
+  // 要件用語セクション
+  // ──────────────────────────────────────────────
+  cells.push({ row, col: 0, value: "要件用語" });
+  merges.push({ startRow: row, endRow: row, startCol: 0, endCol: 1 });
+  formats.push(sectionHeaderFormat(row, 0, 1));
+  row++;
+
+  const termHeaders = ["Ｎｏ", "用語", "概要"];
+  for (let c = 0; c < termHeaders.length; c++) {
+    cells.push({ row, col: c, value: termHeaders[c] });
+    formats.push(headerFormat(row, c));
+  }
+  // 概要は col 2-3 にマージ
+  merges.push({ startRow: row, endRow: row, startCol: 2, endCol: 3 });
+  row++;
+
+  if (data.terminology.length > 0) {
+    for (let i = 0; i < data.terminology.length; i++) {
+      const term = data.terminology[i];
+      cells.push({ row, col: 0, value: i + 1 });
+      cells.push({ row, col: 1, value: term.term });
+      cells.push({ row, col: 2, value: term.definition });
+      merges.push({ startRow: row, endRow: row, startCol: 2, endCol: 3 });
+      for (let c = 0; c < 4; c++) {
+        formats.push(dataFormat(row, c, { wrapText: true, vAlign: "top" }));
+      }
+      row++;
+    }
+  } else {
+    for (let i = 1; i <= 10; i++) {
+      cells.push({ row, col: 0, value: i });
+      merges.push({ startRow: row, endRow: row, startCol: 2, endCol: 3 });
+      for (let c = 0; c < 4; c++) {
+        formats.push(dataFormat(row, c));
+      }
+      row++;
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  // セパレータ
+  // ──────────────────────────────────────────────
+  rowHeights.push({ row, height: 8 });
+  row++;
+
+  // ──────────────────────────────────────────────
+  // 処理概要セクション
+  // ──────────────────────────────────────────────
+  cells.push({ row, col: 0, value: "処理概要" });
+  merges.push({ startRow: row, endRow: row, startCol: 0, endCol: 7 });
+  formats.push(sectionHeaderFormat(row, 0, 7));
+  row++;
+
+  // 概要ラベル行
+  cells.push({ row, col: 0, value: "概要" });
+  merges.push({ startRow: row, endRow: row, startCol: 0, endCol: 7 });
+  formats.push({
+    row, col: 0, endCol: 7,
+    bold: false, fontSize: 17,
+    bgColor: COLOR_WHITE, textColor: COLOR_BLACK,
+    vAlign: "middle",
+  });
+  row++;
+
+  // 概要本文
+  if (data.processOverview) {
+    cells.push({ row, col: 0, value: data.processOverview });
+    merges.push({ startRow: row, endRow: row + 2, startCol: 0, endCol: 7 });
+    formats.push({
+      row, col: 0, endRow: row + 2, endCol: 7,
+      fontSize: 10, wrapText: true, vAlign: "top",
+      bgColor: COLOR_WHITE, textColor: COLOR_BLACK,
+    });
+    row += 3;
+  }
+  row++;
 
   return {
     sheetName: "表紙",
@@ -179,14 +480,16 @@ function buildCoverSheet(data: ClientRequirementsDto): SheetDefinition {
     merges,
     formats,
     columnWidths: [
-      { col: 0, width: 60 },
-      { col: 1, width: 160 },
-      { col: 2, width: DEFAULT_COL_WIDTH },
-      { col: 3, width: DEFAULT_COL_WIDTH },
-      { col: 4, width: DEFAULT_COL_WIDTH },
-      { col: 5, width: DEFAULT_COL_WIDTH },
+      { col: 0, width: 100 },
+      { col: 1, width: 140 },
+      { col: 2, width: 140 },
+      { col: 3, width: 180 },
+      { col: 4, width: 60 },
+      { col: 5, width: 100 },
+      { col: 6, width: 100 },
+      { col: 7, width: 100 },
     ],
-    rowHeights: [{ row: 0, height: 50 }],
+    rowHeights,
     frozenRows: 1,
   };
 }
@@ -199,17 +502,11 @@ function buildRequirementsSheet(data: ClientRequirementsDto): SheetDefinition {
   const formats: CellFormat[] = [];
   let row = 0;
 
-  // ヘッダー行
+  // ヘッダー行（#99ccff背景）
   const headers = ["No", "要件ID", "カテゴリ", "要件名", "説明", "優先度", "受け入れ基準"];
   for (let c = 0; c < headers.length; c++) {
     cells.push({ row, col: c, value: headers[c] });
-    formats.push({
-      row, col: c,
-      bold: true,
-      bgColor: COLOR_HEADER_BG, textColor: COLOR_HEADER_TEXT,
-      hAlign: "center", vAlign: "middle",
-      borderTop: "thin", borderBottom: "thin", borderLeft: "thin", borderRight: "thin",
-    });
+    formats.push(headerFormat(row, c));
   }
   row++;
 
@@ -227,11 +524,7 @@ function buildRequirementsSheet(data: ClientRequirementsDto): SheetDefinition {
     ];
     for (let c = 0; c < values.length; c++) {
       cells.push({ row, col: c, value: values[c] });
-      formats.push({
-        row, col: c,
-        wrapText: true, vAlign: "top",
-        borderTop: "thin", borderBottom: "thin", borderLeft: "thin", borderRight: "thin",
-      });
+      formats.push(dataFormat(row, c, { wrapText: true, vAlign: "top" }));
     }
     row++;
   }
@@ -255,7 +548,7 @@ function buildRequirementsSheet(data: ClientRequirementsDto): SheetDefinition {
   };
 }
 
-// ── 業務フローシート（スイムレーン形式） ──
+// ── 業務フローシート（スイムレーン形式・NTTスタイル） ──
 
 function buildBusinessFlowSheets(flows: readonly BusinessFlow[]): SheetDefinition[] {
   return flows.map((flow, index) =>
@@ -272,113 +565,140 @@ function buildSwimlaneSheet(flow: BusinessFlow, flowIndex: number): SheetDefinit
 
   const actors = flow.actors;
   const actorCount = actors.length;
+  const totalCols = actorCount + 1; // ステップNo列 + アクター列
 
-  // フローヘッダー: タイトル + 説明
-  cells.push({ row, col: 0, value: `業務フロー${flowIndex}: ${flow.flowName}` });
-  merges.push({ startRow: row, endRow: row, startCol: 0, endCol: actorCount });
+  // ──────────────────────────────────────────────
+  // フロータイトル行（白背景、17pt、太字 — NTTの s23 スタイル）
+  // ──────────────────────────────────────────────
+  const flowTitle = `○${flow.flowName}`;
+  cells.push({ row, col: 0, value: flowTitle });
+  merges.push({ startRow: row, endRow: row, startCol: 0, endCol: totalCols - 1 });
   formats.push({
-    row, col: 0, endCol: actorCount,
-    bold: true, fontSize: 14,
-    bgColor: COLOR_HEADER_BG, textColor: COLOR_HEADER_TEXT,
-    hAlign: "center", vAlign: "middle",
+    row, col: 0, endCol: totalCols - 1,
+    bold: true, fontSize: 17,
+    bgColor: COLOR_WHITE, textColor: COLOR_BLACK,
+    vAlign: "middle",
+    borderBottom: "thin",
   });
-  rowHeights.push({ row, height: 40 });
+  rowHeights.push({ row, height: 36 });
   row++;
 
-  if (flow.description) {
-    cells.push({ row, col: 0, value: flow.description });
-    merges.push({ startRow: row, endRow: row, startCol: 0, endCol: actorCount });
-    formats.push({
-      row, col: 0, endCol: actorCount,
-      wrapText: true, italic: true,
-      borderBottom: "medium",
-    });
-    row++;
-  }
-
-  // スイムレーンヘッダー: ステップNo + アクター列
-  cells.push({ row, col: 0, value: "No" });
-  formats.push({
-    row, col: 0,
-    bold: true, bgColor: COLOR_LABEL_BG,
-    hAlign: "center", vAlign: "middle",
-    borderTop: "medium", borderBottom: "medium", borderLeft: "medium", borderRight: "thin",
-  });
+  // ──────────────────────────────────────────────
+  // スイムレーンヘッダー: アクター列（各アクター固有色）
+  // ──────────────────────────────────────────────
+  // 最初の列は空（ステップNo用）
+  cells.push({ row, col: 0, value: "" });
+  formats.push(dataFormat(row, 0, { hAlign: "center" }));
 
   for (let a = 0; a < actorCount; a++) {
     cells.push({ row, col: a + 1, value: actors[a] });
     const actorColor = COLOR_ACTOR_COLORS[a % COLOR_ACTOR_COLORS.length];
     formats.push({
       row, col: a + 1,
-      bold: true, bgColor: actorColor,
+      bold: false, fontSize: 10,
+      bgColor: actorColor,
+      textColor: COLOR_BLACK,
       hAlign: "center", vAlign: "middle",
-      borderTop: "medium", borderBottom: "medium", borderLeft: "thin", borderRight: a === actorCount - 1 ? "medium" : "thin",
+      borderTop: "thin", borderBottom: "thin",
+      borderLeft: "thin", borderRight: "thin",
     });
   }
   rowHeights.push({ row, height: HEADER_ROW_HEIGHT });
   row++;
 
-  // フローステップ行
+  // ──────────────────────────────────────────────
+  // フロー説明行（もしあれば）
+  // ──────────────────────────────────────────────
+  if (flow.description) {
+    cells.push({ row, col: 0, value: flow.description });
+    merges.push({ startRow: row, endRow: row, startCol: 0, endCol: totalCols - 1 });
+    formats.push({
+      row, col: 0, endCol: totalCols - 1,
+      wrapText: true, fontSize: 10,
+      bgColor: COLOR_WHITE, textColor: COLOR_BLACK,
+      vAlign: "middle",
+    });
+    row++;
+  }
+
+  // ──────────────────────────────────────────────
+  // 空行
+  // ──────────────────────────────────────────────
+  row++;
+
+  // ──────────────────────────────────────────────
+  // フローステップ行（NTTスタイル: 破線ボーダーで区切り）
+  // ──────────────────────────────────────────────
   for (const step of flow.steps) {
     const actorIndex = actors.indexOf(step.actor);
     const targetCol = actorIndex >= 0 ? actorIndex + 1 : 1;
 
-    // ステップ番号
-    cells.push({ row, col: 0, value: step.stepNumber });
+    // ステップ番号はセクションヘッダー（#cfe2f3）で表示
+    const stepLabel = `ステップ${step.stepNumber}:${step.action}`;
+    cells.push({ row, col: targetCol, value: stepLabel });
     formats.push({
-      row, col: 0,
+      row, col: targetCol,
+      bold: false, fontSize: 10,
+      bgColor: COLOR_SECTION_BG,
+      textColor: COLOR_BLACK,
       hAlign: "center", vAlign: "middle",
-      bgColor: COLOR_LABEL_BG,
-      borderTop: "thin", borderBottom: "thin", borderLeft: "medium", borderRight: "thin",
+      borderTop: "thin", borderBottom: "thin",
+      borderLeft: "thin", borderRight: "thin",
     });
 
-    // アクション内容を該当アクターの列に配置
-    let cellContent = step.action;
+    // 他のアクター列は空、破線ボーダー
+    for (let a = 0; a < actorCount; a++) {
+      const col = a + 1;
+      if (col !== targetCol) {
+        formats.push({
+          row, col,
+          bgColor: COLOR_WHITE,
+          borderTop: "thin", borderBottom: "thin",
+          borderLeft: "thin", borderRight: "thin",
+        });
+      }
+    }
+    // ステップNo列
+    formats.push(dataFormat(row, 0, { hAlign: "center" }));
+    row++;
+
+    // 詳細行（もしあれば）
     if (step.details) {
-      cellContent += `\n${step.details}`;
+      cells.push({ row, col: targetCol, value: step.details });
+      for (let c = 0; c <= actorCount; c++) {
+        formats.push(dataFormat(row, c, {
+          wrapText: c === targetCol,
+          vAlign: "middle",
+        }));
+      }
+      row++;
     }
 
     // 分岐条件がある場合
     if (step.branchCondition) {
-      cellContent += `\n【判断】${step.branchCondition}`;
-      if (step.branchYes) cellContent += `\n → Yes: ステップ${step.branchYes}`;
-      if (step.branchNo) cellContent += `\n → No: ステップ${step.branchNo}`;
+      let branchContent = `【判断】${step.branchCondition}`;
+      if (step.branchYes) branchContent += `\n → Yes: ステップ${step.branchYes}`;
+      if (step.branchNo) branchContent += `\n → No: ステップ${step.branchNo}`;
+
+      cells.push({ row, col: targetCol, value: branchContent });
+      for (let c = 0; c <= actorCount; c++) {
+        formats.push(dataFormat(row, c, {
+          wrapText: c === targetCol,
+          vAlign: "middle",
+          bgColor: c === targetCol ? COLOR_ACCENT_BG : COLOR_WHITE,
+        }));
+      }
+      rowHeights.push({ row, height: 60 });
+      row++;
     }
 
-    cells.push({ row, col: targetCol, value: cellContent });
-
-    // 全アクター列にボーダーを設定
-    for (let a = 0; a < actorCount; a++) {
-      const col = a + 1;
-      const isTarget = col === targetCol;
-      const actorColor = COLOR_ACTOR_COLORS[a % COLOR_ACTOR_COLORS.length];
-
-      formats.push({
-        row, col,
-        wrapText: true, vAlign: "middle",
-        bgColor: isTarget ? actorColor : COLOR_WHITE,
-        bold: isTarget && !!step.branchCondition,
-        borderTop: "thin", borderBottom: "thin",
-        borderLeft: "thin",
-        borderRight: a === actorCount - 1 ? "medium" : "thin",
-      });
-    }
-
-    // 分岐ステップは高さを広くする
-    if (step.branchCondition) {
-      rowHeights.push({ row, height: 80 });
-    } else if (step.details) {
-      rowHeights.push({ row, height: 50 });
-    } else {
-      rowHeights.push({ row, height: DEFAULT_ROW_HEIGHT });
-    }
-
+    // ステップ間の空行
     row++;
   }
 
   // 列幅
   const columnWidths: ColumnWidth[] = [
-    { col: 0, width: 50 },
+    { col: 0, width: 30 },
     ...actors.map((_, a) => ({ col: a + 1, width: SWIMLANE_COL_WIDTH })),
   ];
 
@@ -389,7 +709,7 @@ function buildSwimlaneSheet(flow: BusinessFlow, flowIndex: number): SheetDefinit
     formats,
     columnWidths,
     rowHeights,
-    frozenRows: row > 3 ? (flow.description ? 3 : 2) : undefined,
+    frozenRows: 2,
   };
 }
 
@@ -403,13 +723,7 @@ function buildScreensSheet(data: ClientRequirementsDto): SheetDefinition {
   const headers = ["No", "画面ID", "画面名", "目的・概要", "主な項目", "関連フロー", "遷移先"];
   for (let c = 0; c < headers.length; c++) {
     cells.push({ row, col: c, value: headers[c] });
-    formats.push({
-      row, col: c,
-      bold: true,
-      bgColor: COLOR_HEADER_BG, textColor: COLOR_HEADER_TEXT,
-      hAlign: "center", vAlign: "middle",
-      borderTop: "thin", borderBottom: "thin", borderLeft: "thin", borderRight: "thin",
-    });
+    formats.push(headerFormat(row, c));
   }
   row++;
 
@@ -426,11 +740,7 @@ function buildScreensSheet(data: ClientRequirementsDto): SheetDefinition {
     ];
     for (let c = 0; c < values.length; c++) {
       cells.push({ row, col: c, value: values[c] });
-      formats.push({
-        row, col: c,
-        wrapText: true, vAlign: "top",
-        borderTop: "thin", borderBottom: "thin", borderLeft: "thin", borderRight: "thin",
-      });
+      formats.push(dataFormat(row, c, { wrapText: true, vAlign: "top" }));
     }
     row++;
   }
@@ -462,27 +772,18 @@ function buildParametersSheet(data: ClientRequirementsDto): SheetDefinition {
   const formats: CellFormat[] = [];
   let row = 0;
 
-  const headers = ["No", "データID", "項目名", "桁数", "型", "摘要"];
+  const headers = ["Ｎｏ", "データＩＤ", "項　　目　　名", "桁数", "型", "摘　　　　　要"];
 
   // 入力パラメータ
   if (data.inputParameters.length > 0) {
     cells.push({ row, col: 0, value: "入力パラメータ" });
-    merges.push({ startRow: row, endRow: row, startCol: 0, endCol: 5 });
-    formats.push({
-      row, col: 0, endCol: 5,
-      bold: true, fontSize: 13, bgColor: COLOR_SUBHEADER_BG,
-      borderBottom: "medium",
-    });
+    merges.push({ startRow: row, endRow: row, startCol: 0, endCol: 1 });
+    formats.push(sectionHeaderFormat(row, 0, 1));
     row++;
 
     for (let c = 0; c < headers.length; c++) {
       cells.push({ row, col: c, value: headers[c] });
-      formats.push({
-        row, col: c,
-        bold: true, bgColor: COLOR_HEADER_BG, textColor: COLOR_HEADER_TEXT,
-        hAlign: "center",
-        borderTop: "thin", borderBottom: "thin", borderLeft: "thin", borderRight: "thin",
-      });
+      formats.push(headerFormat(row, c));
     }
     row++;
 
@@ -490,10 +791,7 @@ function buildParametersSheet(data: ClientRequirementsDto): SheetDefinition {
       const values = [param.no, param.dataId, param.itemName, param.digits, param.type, param.remarks];
       for (let c = 0; c < values.length; c++) {
         cells.push({ row, col: c, value: values[c] });
-        formats.push({
-          row, col: c,
-          borderTop: "thin", borderBottom: "thin", borderLeft: "thin", borderRight: "thin",
-        });
+        formats.push(dataFormat(row, c));
       }
       row++;
     }
@@ -503,22 +801,13 @@ function buildParametersSheet(data: ClientRequirementsDto): SheetDefinition {
   // 出力パラメータ
   if (data.outputParameters.length > 0) {
     cells.push({ row, col: 0, value: "出力パラメータ" });
-    merges.push({ startRow: row, endRow: row, startCol: 0, endCol: 5 });
-    formats.push({
-      row, col: 0, endCol: 5,
-      bold: true, fontSize: 13, bgColor: COLOR_SUBHEADER_BG,
-      borderBottom: "medium",
-    });
+    merges.push({ startRow: row, endRow: row, startCol: 0, endCol: 1 });
+    formats.push(sectionHeaderFormat(row, 0, 1));
     row++;
 
     for (let c = 0; c < headers.length; c++) {
       cells.push({ row, col: c, value: headers[c] });
-      formats.push({
-        row, col: c,
-        bold: true, bgColor: COLOR_HEADER_BG, textColor: COLOR_HEADER_TEXT,
-        hAlign: "center",
-        borderTop: "thin", borderBottom: "thin", borderLeft: "thin", borderRight: "thin",
-      });
+      formats.push(headerFormat(row, c));
     }
     row++;
 
@@ -526,10 +815,7 @@ function buildParametersSheet(data: ClientRequirementsDto): SheetDefinition {
       const values = [param.no, param.dataId, param.itemName, param.digits, param.type, param.remarks];
       for (let c = 0; c < values.length; c++) {
         cells.push({ row, col: c, value: values[c] });
-        formats.push({
-          row, col: c,
-          borderTop: "thin", borderBottom: "thin", borderLeft: "thin", borderRight: "thin",
-        });
+        formats.push(dataFormat(row, c));
       }
       row++;
     }
@@ -560,16 +846,10 @@ function buildTerminologySheet(data: ClientRequirementsDto): SheetDefinition {
   const formats: CellFormat[] = [];
   let row = 0;
 
-  const headers = ["No", "用語", "定義・説明", "関連ドメイン"];
+  const headers = ["Ｎｏ", "用語", "概要", "関連ドメイン"];
   for (let c = 0; c < headers.length; c++) {
     cells.push({ row, col: c, value: headers[c] });
-    formats.push({
-      row, col: c,
-      bold: true,
-      bgColor: COLOR_HEADER_BG, textColor: COLOR_HEADER_TEXT,
-      hAlign: "center", vAlign: "middle",
-      borderTop: "thin", borderBottom: "thin", borderLeft: "thin", borderRight: "thin",
-    });
+    formats.push(headerFormat(row, c));
   }
   row++;
 
@@ -578,11 +858,7 @@ function buildTerminologySheet(data: ClientRequirementsDto): SheetDefinition {
     const values = [i + 1, term.term, term.definition, term.relatedDomain];
     for (let c = 0; c < values.length; c++) {
       cells.push({ row, col: c, value: values[c] });
-      formats.push({
-        row, col: c,
-        wrapText: true, vAlign: "top",
-        borderTop: "thin", borderBottom: "thin", borderLeft: "thin", borderRight: "thin",
-      });
+      formats.push(dataFormat(row, c, { wrapText: true, vAlign: "top" }));
     }
     row++;
   }
