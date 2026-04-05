@@ -48,6 +48,20 @@ export {
   type LoggerPort,
 } from "./logger/index.js";
 
+// Spreadsheet adapters
+export {
+  GoogleSheetsAdapter,
+  type SpreadsheetPort,
+  type SpreadsheetWriteResult,
+} from "./spreadsheet/index.js";
+
+// Presentation adapters
+export {
+  GoogleSlidesAdapter,
+  type PresentationPort,
+  type PresentationWriteResult,
+} from "./presentation/index.js";
+
 // Theme adapters
 export {
   BIOHAZARD_THEME,

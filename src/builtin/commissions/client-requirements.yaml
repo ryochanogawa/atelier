@@ -1,0 +1,13 @@
+name: client-requirements
+description: 顧客向け要件定義書の生成 — スプレッドシート出力用の構造化データを作成
+
+strokes:
+  - name: client-requirements
+    palette: business-analyst
+    instruction: client-requirements
+    contract: client-requirements-output
+    allow_edit: true
+    inputs:
+      - requirements
+    outputs:
+      - client_requirements_json
