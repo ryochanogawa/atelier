@@ -570,7 +570,8 @@ export function createSpecCommand(): Command {
     .description("顧客向け要件定義書を生成し、スプレッドシートまたはJSONとして出力する")
     .option("--output <format>", "出力形式 (sheets | slides | json)", "json")
     .option("--spec <id>", "既存specのIDから要件を読み込む")
-    .action(async (description: string | undefined, opts: { output: string; spec?: string }) => {
+    .option("--skip-requirements", "既存の要件定義JSONを再利用し、要件生成をスキップする")
+    .action(async (description: string | undefined, opts: { output: string; spec?: string; skipRequirements?: boolean }) => {
       const projectPath = process.cwd();
       const outputFormat = opts.output;
 
@@ -639,17 +640,23 @@ export function createSpecCommand(): Command {
           await saveSpecJson(specDir, specData);
         }
 
-        // Commission 実行
-        spinner.text = "AI が要件定義書を生成中...";
-        await runCommission(projectPath, "client-requirements", {
-          requirements: description,
-          spec_dir: specDirName!,
-        });
-
-        // Commission が保存した JSON を読み込む
+        // Commission 実行（--skip-requirements 時は既存JSONを再利用）
         const jsonPath = path.join(specDir, "client-requirements.json");
+        const canSkip = opts.skipRequirements && (await fileExists(jsonPath));
+
+        if (canSkip) {
+          spinner.text = "既存の要件定義JSONを再利用します...";
+        } else {
+          spinner.text = "AI が要件定義書を生成中...";
+          await runCommission(projectPath, "client-requirements", {
+            requirements: description,
+            spec_dir: specDirName!,
+          });
+        }
+
+        // JSON を読み込む
         if (!(await fileExists(jsonPath))) {
-          spinner.fail("要件定義JSONが生成されませんでした");
+          spinner.fail("要件定義JSONが見つかりません。--skip-requirements を外して再実行してください");
           process.exitCode = 1;
           return;
         }
