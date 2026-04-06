@@ -1,0 +1,75 @@
+name: slide-plan-output
+description: スライド構成プランの構造化JSON出力フォーマット。各スライドのテンプレートタイプとコンテンツを指定する。
+
+format: |
+  以下のJSON形式で出力してください。必ず有効なJSONとして出力すること。
+  コードブロック（```json）で囲んでください。
+
+  利用可能なスライドタイプ:
+
+  1. **cover** - 表紙スライド
+     - projectName: プロジェクト名
+     - subtitle: サブタイトル（バリュー提案）
+     - version, author, date: メタ情報
+
+  2. **benefits** - 導入効果スライド（最大4件）
+     - title: スライドタイトル
+     - benefits: [{icon: "絵文字", text: "効果の説明"}]
+
+  3. **overview** - 概要スライド
+     - title, icon, body: 概要テキスト
+
+  4. **card-grid** - カードグリッド（最大6件、カテゴリ全体像など）
+     - title: スライドタイトル
+     - cards: [{icon: "絵文字", heading: "見出し", subtext: "補足"}]
+
+  5. **detail-cards** - 詳細カード（最大3件/ページ、要件詳細など）
+     - title: スライドタイトル
+     - cards: [{id: "ID", name: "名前", description: "説明", badge: "必須|推奨|任意", badgeColor: "orange|green|gray"}]
+
+  6. **sequence-diagram** - シーケンス図（最大8ステップ/ページ）
+     - title: フロー名
+     - summary: フローの目的（1文）
+     - actors: [{name: "アクター名", icon: "絵文字", color: "red|green|orange|blue|purple|teal"}]
+     - steps: [{stepNumber: 1, fromActor: "送信元アクター名", toActor: "送信先アクター名", label: "アクション", sublabel: "補足", style: "normal|branch|start|end"}]
+
+     **重要**: fromActorとtoActorはactors配列のnameと完全一致させること。
+     同じアクター内のアクションはfromActor=toActorにする。
+     ステップが8個を超える場合は複数のsequence-diagramスライドに分割する。
+
+  7. **data-table** - データテーブル（最大6行）
+     - title, columns: ["列名1", "列名2", ...], rows: [["値1", "値2", ...], ...]
+
+  8. **screen-list** - 画面一覧カード（最大4件/ページ）
+     - title: スライドタイトル
+     - screens: [{icon: "絵文字", name: "画面名", description: "説明"}]
+
+  9. **architecture** - システム全体構成図（アクター間の関係性を可視化）
+     - title: スライドタイトル
+     - description: 全体の説明文（1〜2行）
+     - actors: [{name: "アクター名", icon: "絵文字", color: "red|green|orange|blue|purple|teal"}]
+     - relationships: [{label: "関係の名前", description: "説明", fromActors: ["アクター1"], toActors: ["アクター2", "アクター3"]}]
+
+     **重要**: fromActors/toActorsのアクター名はactors配列のnameと完全一致。
+     関係性ブロックはfromActorsとtoActorsの範囲を横断する概念ブロックとして表示。
+
+  ```json
+  {
+    "slides": [
+      { "slideType": "cover", "projectName": "...", "subtitle": "...", ... },
+      { "slideType": "benefits", "title": "導入効果", "benefits": [...] },
+      { "slideType": "overview", "title": "プロジェクト概要", "icon": "📋", "body": "..." },
+      { "slideType": "card-grid", "title": "機能要件の全体像", "cards": [...] },
+      { "slideType": "detail-cards", "title": "タスク管理", "cards": [...] },
+      { "slideType": "sequence-diagram", "title": "タスク登録の流れ", "summary": "...", "actors": [...], "steps": [...] },
+      { "slideType": "data-table", "title": "入力データ項目", "columns": [...], "rows": [...] },
+      { "slideType": "screen-list", "title": "画面一覧", "screens": [...] }
+    ]
+  }
+  ```
+
+fields:
+  - name: slides
+    type: array
+    required: true
+    description: スライド構成の配列。各要素はslideTypeで種別を指定し、タイプ固有のコンテンツフィールドを持つ。

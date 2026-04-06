@@ -1,13 +1,30 @@
 /**
  * Google Slides Adapter
- * Google Slides API v1を使用してプレゼンテーションを作成する。
+ * テンプレートベースのスライド生成。
+ * AIが生成したスライドプラン（SlidePlanDto）に基づき、
+ * 各スライドタイプのレンダラーにディスパッチして描画する。
  *
  * 認証は共通 OAuth ヘルパーを使用（Sheets と同一トークン）。
  */
 
 import type { PresentationPort, PresentationWriteResult } from "../../domain/ports/presentation.port.js";
-import type { ClientRequirementsDto, BusinessFlow } from "../../application/dto/client-requirements.dto.js";
+import type { ClientRequirementsDto } from "../../application/dto/client-requirements.dto.js";
+import type { SlidePlanDto, SlideDescriptor } from "../../application/dto/slide-plan.dto.js";
 import { getGoogleAuthClient } from "../../infrastructure/google/oauth.js";
+import {
+  type SlideRequest,
+  SLIDE_W,
+  SLIDE_H,
+} from "./renderers/base.renderer.js";
+import { CoverRenderer } from "./renderers/cover.renderer.js";
+import { BenefitsRenderer } from "./renderers/benefits.renderer.js";
+import { OverviewRenderer } from "./renderers/overview.renderer.js";
+import { CardGridRenderer } from "./renderers/card-grid.renderer.js";
+import { DetailCardsRenderer } from "./renderers/detail-cards.renderer.js";
+import { SequenceDiagramRenderer } from "./renderers/sequence-diagram.renderer.js";
+import { DataTableRenderer } from "./renderers/data-table.renderer.js";
+import { ScreenListRenderer } from "./renderers/screen-list.renderer.js";
+import { ArchitectureRenderer } from "./renderers/architecture.renderer.js";
 
 // ── 型定義 ──
 
@@ -15,60 +32,43 @@ type SlidesApi = {
   presentations: {
     create: (params: Record<string, unknown>) => Promise<{ data: Record<string, unknown> }>;
     batchUpdate: (params: Record<string, unknown>) => Promise<{ data: Record<string, unknown> }>;
-    get: (params: Record<string, unknown>) => Promise<{ data: Record<string, unknown> }>;
   };
 };
 
-type SlideRequest = Record<string, unknown>;
+// ── レンダラーインスタンス ──
 
-// ── NTTカラーパレット ──
-
-const COLORS = {
-  darkBlue: { red: 0, green: 0.2, blue: 0.4 },         // #003366
-  mediumBlue: { red: 0.15, green: 0.35, blue: 0.6 },    // #265999
-  lightBlue: { red: 0.81, green: 0.89, blue: 0.95 },    // #CFE2F3
-  accentBlue: { red: 0.26, green: 0.52, blue: 0.96 },   // #4285F4
-  white: { red: 1, green: 1, blue: 1 },
-  black: { red: 0, green: 0, blue: 0 },
-  lightGray: { red: 0.93, green: 0.93, blue: 0.93 },    // #EDEDED
-  darkGray: { red: 0.3, green: 0.3, blue: 0.3 },
-  headerBlue: { red: 0.81, green: 0.89, blue: 0.95 },   // #CFE2F3
-  // アクターカラー（スイムレーン用）
-  actor1: { red: 0.85, green: 0.92, blue: 0.98 },
-  actor2: { red: 0.92, green: 0.85, blue: 0.98 },
-  actor3: { red: 0.85, green: 0.98, blue: 0.88 },
-  actor4: { red: 0.98, green: 0.92, blue: 0.85 },
-  actor5: { red: 0.98, green: 0.85, blue: 0.85 },
-} as const;
-
-type RgbColor = { red: number; green: number; blue: number };
-
-// ── スライドサイズ（EMU: 1pt = 12700 EMU） ──
-
-const PT = 12700;
-const SLIDE_WIDTH = 10_000_000;   // ~787pt (wide 16:9)
-const SLIDE_HEIGHT = 5_625_000;   // ~443pt
-
-/** ユニークID生成 */
-let idCounter = 0;
-function uid(prefix = "elem"): string {
-  return `${prefix}_${Date.now()}_${++idCounter}`;
-}
+const RENDERERS: Record<string, { render: (r: SlideRequest[], d: never) => void }> = {
+  cover: new CoverRenderer(),
+  benefits: new BenefitsRenderer(),
+  overview: new OverviewRenderer(),
+  "card-grid": new CardGridRenderer(),
+  "detail-cards": new DetailCardsRenderer(),
+  "sequence-diagram": new SequenceDiagramRenderer(),
+  "data-table": new DataTableRenderer(),
+  "screen-list": new ScreenListRenderer(),
+  "architecture": new ArchitectureRenderer(),
+};
 
 export class GoogleSlidesAdapter implements PresentationPort {
   private slidesApi: SlidesApi | null = null;
 
-  async create(data: ClientRequirementsDto): Promise<PresentationWriteResult> {
+  /**
+   * スライドプランからプレゼンテーションを作成する。
+   * AIが計画したスライド構成に基づき、各テンプレートレンダラーで描画。
+   */
+  async createFromPlan(plan: SlidePlanDto): Promise<PresentationWriteResult> {
     const slides = await this.getSlidesApi();
 
-    // 1. プレゼンテーションを作成
-    const title = `${data.projectInfo.projectName} - ${data.projectInfo.documentTitle}`;
+    // タイトルを最初のcoverスライドから取得
+    const coverSlide = plan.slides.find((s) => s.slideType === "cover");
+    const title = coverSlide ? (coverSlide as { projectName: string }).projectName : "プレゼンテーション";
+
     const createResponse = await slides.presentations.create({
       requestBody: {
         title,
         pageSize: {
-          width: { magnitude: SLIDE_WIDTH, unit: "EMU" },
-          height: { magnitude: SLIDE_HEIGHT, unit: "EMU" },
+          width: { magnitude: SLIDE_W, unit: "EMU" },
+          height: { magnitude: SLIDE_H, unit: "EMU" },
         },
       },
     });
@@ -76,50 +76,26 @@ export class GoogleSlidesAdapter implements PresentationPort {
     const presentationId = createResponse.data.presentationId as string;
     const presentationUrl = `https://docs.google.com/presentation/d/${presentationId}/edit`;
 
-    // デフォルトスライドのIDを取得（後で削除）
+    // デフォルトスライドを削除するためIDを取得
     const defaultSlides = (createResponse.data.slides as Array<{ objectId: string }>) ?? [];
     const defaultSlideIds = defaultSlides.map((s) => s.objectId);
 
-    // 2. 全スライドのリクエストを構築
+    // 全スライドのリクエストを構築
     const requests: SlideRequest[] = [];
 
-    // 表紙スライド
-    this.buildCoverSlide(requests, data);
-
-    // 処理概要スライド
-    if (data.processOverview) {
-      this.buildProcessOverviewSlide(requests, data.processOverview);
+    for (const descriptor of plan.slides) {
+      const renderer = RENDERERS[descriptor.slideType];
+      if (renderer) {
+        renderer.render(requests, descriptor as never);
+      }
     }
 
-    // 要件一覧スライド（8件ごとにページ分割）
-    this.buildRequirementsSlides(requests, data);
-
-    // 業務フロースライド
-    for (const flow of data.businessFlows) {
-      this.buildBusinessFlowSlide(requests, flow);
+    // デフォルトスライド削除
+    for (const id of defaultSlideIds) {
+      requests.push({ deleteObject: { objectId: id } });
     }
 
-    // 画面一覧スライド
-    if (data.screens.length > 0) {
-      this.buildScreenListSlides(requests, data);
-    }
-
-    // 入出力パラメータスライド
-    if (data.inputParameters.length > 0 || data.outputParameters.length > 0) {
-      this.buildParametersSlides(requests, data);
-    }
-
-    // 用語集スライド
-    if (data.terminology.length > 0) {
-      this.buildTerminologySlides(requests, data);
-    }
-
-    // デフォルトスライドの削除リクエスト
-    for (const slideId of defaultSlideIds) {
-      requests.push({ deleteObject: { objectId: slideId } });
-    }
-
-    // 3. バッチ更新
+    // バッチ更新
     if (requests.length > 0) {
       await slides.presentations.batchUpdate({
         presentationId,
@@ -130,902 +106,193 @@ export class GoogleSlidesAdapter implements PresentationPort {
     return { presentationId, presentationUrl };
   }
 
-  // ── Private: API 取得 ──
+  /**
+   * 後方互換: ClientRequirementsDtoからデフォルトのスライドプランを構築して描画。
+   * slide-compositionコミッションが使えない場合のフォールバック。
+   */
+  async create(data: ClientRequirementsDto): Promise<PresentationWriteResult> {
+    const plan = this.buildDefaultPlan(data);
+    return this.createFromPlan(plan);
+  }
+
+  // ── Private ──
 
   private async getSlidesApi(): Promise<SlidesApi> {
     if (this.slidesApi) return this.slidesApi;
-
     const { google } = await import("googleapis");
     const auth = await getGoogleAuthClient();
     this.slidesApi = google.slides({ version: "v1", auth }) as unknown as SlidesApi;
     return this.slidesApi;
   }
 
-  // ── Private: 表紙スライド ──
-
-  private buildCoverSlide(requests: SlideRequest[], data: ClientRequirementsDto): void {
-    const slideId = uid("cover");
-    requests.push({ createSlide: { objectId: slideId, insertionIndex: "0" } });
-
-    // 背景色（ダークブルー）
-    requests.push({
-      updatePageProperties: {
-        objectId: slideId,
-        pageProperties: {
-          pageBackgroundFill: {
-            solidFill: { color: { rgbColor: COLORS.darkBlue } },
-          },
-        },
-        fields: "pageBackgroundFill",
-      },
-    });
-
-    // プロジェクト名（大タイトル）
-    const titleId = uid("cover_title");
-    requests.push({
-      createShape: {
-        objectId: titleId,
-        shapeType: "TEXT_BOX",
-        elementProperties: {
-          pageObjectId: slideId,
-          size: { width: { magnitude: 8_000_000, unit: "EMU" }, height: { magnitude: 1_200_000, unit: "EMU" } },
-          transform: { scaleX: 1, scaleY: 1, translateX: 1_000_000, translateY: 1_400_000, unit: "EMU" },
-        },
-      },
-    });
-    requests.push({
-      insertText: { objectId: titleId, text: data.projectInfo.projectName, insertionIndex: 0 },
-    });
-    requests.push({
-      updateTextStyle: {
-        objectId: titleId,
-        style: {
-          fontSize: { magnitude: 36, unit: "PT" },
-          foregroundColor: { opaqueColor: { rgbColor: COLORS.white } },
-          bold: true,
-          fontFamily: "Noto Sans JP",
-        },
-        textRange: { type: "ALL" },
-        fields: "fontSize,foregroundColor,bold,fontFamily",
-      },
-    });
-    requests.push({
-      updateParagraphStyle: {
-        objectId: titleId,
-        style: { alignment: "CENTER" },
-        textRange: { type: "ALL" },
-        fields: "alignment",
-      },
-    });
-
-    // ドキュメントタイトル（サブタイトル）
-    const subtitleId = uid("cover_subtitle");
-    requests.push({
-      createShape: {
-        objectId: subtitleId,
-        shapeType: "TEXT_BOX",
-        elementProperties: {
-          pageObjectId: slideId,
-          size: { width: { magnitude: 8_000_000, unit: "EMU" }, height: { magnitude: 600_000, unit: "EMU" } },
-          transform: { scaleX: 1, scaleY: 1, translateX: 1_000_000, translateY: 2_700_000, unit: "EMU" },
-        },
-      },
-    });
-    requests.push({
-      insertText: { objectId: subtitleId, text: data.projectInfo.documentTitle, insertionIndex: 0 },
-    });
-    requests.push({
-      updateTextStyle: {
-        objectId: subtitleId,
-        style: {
-          fontSize: { magnitude: 20, unit: "PT" },
-          foregroundColor: { opaqueColor: { rgbColor: COLORS.lightBlue } },
-          fontFamily: "Noto Sans JP",
-        },
-        textRange: { type: "ALL" },
-        fields: "fontSize,foregroundColor,fontFamily",
-      },
-    });
-    requests.push({
-      updateParagraphStyle: {
-        objectId: subtitleId,
-        style: { alignment: "CENTER" },
-        textRange: { type: "ALL" },
-        fields: "alignment",
-      },
-    });
-
-    // 区切り線
-    const lineId = uid("cover_line");
-    requests.push({
-      createLine: {
-        objectId: lineId,
-        lineCategory: "STRAIGHT",
-        elementProperties: {
-          pageObjectId: slideId,
-          size: { width: { magnitude: 6_000_000, unit: "EMU" }, height: { magnitude: 0, unit: "EMU" } },
-          transform: { scaleX: 1, scaleY: 1, translateX: 2_000_000, translateY: 3_500_000, unit: "EMU" },
-        },
-      },
-    });
-    requests.push({
-      updateLineProperties: {
-        objectId: lineId,
-        lineProperties: {
-          lineFill: { solidFill: { color: { rgbColor: COLORS.lightBlue } } },
-          weight: { magnitude: 1.5, unit: "PT" },
-        },
-        fields: "lineFill,weight",
-      },
-    });
-
-    // メタ情報（バージョン、著者、日付）
-    const metaText = [
-      data.projectInfo.version ? `Version ${data.projectInfo.version}` : "",
-      data.projectInfo.author ? `作成者: ${data.projectInfo.author}` : "",
-      data.projectInfo.createdDate ? `作成日: ${data.projectInfo.createdDate}` : "",
-      data.projectInfo.updatedDate ? `更新日: ${data.projectInfo.updatedDate}` : "",
-    ]
-      .filter(Boolean)
-      .join("  |  ");
-
-    if (metaText) {
-      const metaId = uid("cover_meta");
-      requests.push({
-        createShape: {
-          objectId: metaId,
-          shapeType: "TEXT_BOX",
-          elementProperties: {
-            pageObjectId: slideId,
-            size: { width: { magnitude: 8_000_000, unit: "EMU" }, height: { magnitude: 400_000, unit: "EMU" } },
-            transform: { scaleX: 1, scaleY: 1, translateX: 1_000_000, translateY: 3_800_000, unit: "EMU" },
-          },
-        },
-      });
-      requests.push({
-        insertText: { objectId: metaId, text: metaText, insertionIndex: 0 },
-      });
-      requests.push({
-        updateTextStyle: {
-          objectId: metaId,
-          style: {
-            fontSize: { magnitude: 11, unit: "PT" },
-            foregroundColor: { opaqueColor: { rgbColor: COLORS.lightGray } },
-            fontFamily: "Noto Sans JP",
-          },
-          textRange: { type: "ALL" },
-          fields: "fontSize,foregroundColor,fontFamily",
-        },
-      });
-      requests.push({
-        updateParagraphStyle: {
-          objectId: metaId,
-          style: { alignment: "CENTER" },
-          textRange: { type: "ALL" },
-          fields: "alignment",
-        },
-      });
-    }
-  }
-
-  // ── Private: 処理概要スライド ──
-
-  private buildProcessOverviewSlide(requests: SlideRequest[], processOverview: string): void {
-    const slideId = uid("overview");
-    requests.push({ createSlide: { objectId: slideId } });
-
-    // タイトル
-    this.addSlideTitle(requests, slideId, "処理概要");
-
-    // 本文
-    const bodyId = uid("overview_body");
-    requests.push({
-      createShape: {
-        objectId: bodyId,
-        shapeType: "TEXT_BOX",
-        elementProperties: {
-          pageObjectId: slideId,
-          size: { width: { magnitude: 8_400_000, unit: "EMU" }, height: { magnitude: 3_600_000, unit: "EMU" } },
-          transform: { scaleX: 1, scaleY: 1, translateX: 800_000, translateY: 1_200_000, unit: "EMU" },
-        },
-      },
-    });
-    requests.push({
-      insertText: { objectId: bodyId, text: processOverview, insertionIndex: 0 },
-    });
-    requests.push({
-      updateTextStyle: {
-        objectId: bodyId,
-        style: {
-          fontSize: { magnitude: 14, unit: "PT" },
-          foregroundColor: { opaqueColor: { rgbColor: COLORS.darkGray } },
-          fontFamily: "Noto Sans JP",
-        },
-        textRange: { type: "ALL" },
-        fields: "fontSize,foregroundColor,fontFamily",
-      },
-    });
-  }
-
-  // ── Private: 要件一覧スライド ──
-
-  private buildRequirementsSlides(requests: SlideRequest[], data: ClientRequirementsDto): void {
-    const reqs = data.requirements;
-    if (reqs.length === 0) return;
-
-    const perPage = 8;
-    const pages = Math.ceil(reqs.length / perPage);
-
-    for (let page = 0; page < pages; page++) {
-      const slideId = uid("req");
-      requests.push({ createSlide: { objectId: slideId } });
-
-      const suffix = pages > 1 ? ` (${page + 1}/${pages})` : "";
-      this.addSlideTitle(requests, slideId, `要件一覧${suffix}`);
-
-      const pageReqs = reqs.slice(page * perPage, (page + 1) * perPage);
-      const rows = pageReqs.length + 1; // +1 for header
-      const cols = 5;
-      const tableId = uid("req_table");
-
-      requests.push({
-        createTable: {
-          objectId: tableId,
-          elementProperties: {
-            pageObjectId: slideId,
-            size: {
-              width: { magnitude: 8_400_000, unit: "EMU" },
-              height: { magnitude: Math.min(rows * 400_000, 3_600_000), unit: "EMU" },
-            },
-            transform: { scaleX: 1, scaleY: 1, translateX: 800_000, translateY: 1_200_000, unit: "EMU" },
-          },
-          rows,
-          columns: cols,
-        },
-      });
-
-      // ヘッダー行
-      const headers = ["No", "要件ID", "カテゴリ", "要件名", "優先度"];
-      for (let c = 0; c < cols; c++) {
-        requests.push({
-          insertText: {
-            objectId: tableId,
-            cellLocation: { rowIndex: 0, columnIndex: c },
-            text: headers[c],
-            insertionIndex: 0,
-          },
-        });
-      }
-
-      // ヘッダー行スタイル
-      requests.push({
-        updateTableCellProperties: {
-          objectId: tableId,
-          tableRange: { location: { rowIndex: 0, columnIndex: 0 }, rowSpan: 1, columnSpan: cols },
-          tableCellProperties: {
-            tableCellBackgroundFill: {
-              solidFill: { color: { rgbColor: COLORS.headerBlue } },
-            },
-          },
-          fields: "tableCellBackgroundFill",
-        },
-      });
-
-      // データ行
-      for (let i = 0; i < pageReqs.length; i++) {
-        const req = pageReqs[i];
-        const rowData = [
-          String(page * perPage + i + 1),
-          req.id,
-          req.category,
-          req.name,
-          req.priority,
-        ];
-        for (let c = 0; c < cols; c++) {
-          requests.push({
-            insertText: {
-              objectId: tableId,
-              cellLocation: { rowIndex: i + 1, columnIndex: c },
-              text: rowData[c],
-              insertionIndex: 0,
-            },
-          });
-        }
-      }
-
-      // テーブル全体のテキストスタイル
-      requests.push({
-        updateTextStyle: {
-          objectId: tableId,
-          style: {
-            fontSize: { magnitude: 10, unit: "PT" },
-            fontFamily: "Noto Sans JP",
-          },
-          textRange: { type: "ALL" },
-          fields: "fontSize,fontFamily",
-        },
-      });
-    }
-  }
-
-  // ── Private: 業務フロースライド（スイムレーン図） ──
-
-  private buildBusinessFlowSlide(requests: SlideRequest[], flow: BusinessFlow): void {
-    const slideId = uid("flow");
-    requests.push({ createSlide: { objectId: slideId } });
-
-    this.addSlideTitle(requests, slideId, `業務フロー: ${flow.flowName}`);
-
-    // フロー説明
-    if (flow.description) {
-      const descId = uid("flow_desc");
-      requests.push({
-        createShape: {
-          objectId: descId,
-          shapeType: "TEXT_BOX",
-          elementProperties: {
-            pageObjectId: slideId,
-            size: { width: { magnitude: 8_400_000, unit: "EMU" }, height: { magnitude: 400_000, unit: "EMU" } },
-            transform: { scaleX: 1, scaleY: 1, translateX: 800_000, translateY: 1_000_000, unit: "EMU" },
-          },
-        },
-      });
-      requests.push({
-        insertText: { objectId: descId, text: flow.description, insertionIndex: 0 },
-      });
-      requests.push({
-        updateTextStyle: {
-          objectId: descId,
-          style: {
-            fontSize: { magnitude: 10, unit: "PT" },
-            foregroundColor: { opaqueColor: { rgbColor: COLORS.darkGray } },
-            fontFamily: "Noto Sans JP",
-          },
-          textRange: { type: "ALL" },
-          fields: "fontSize,foregroundColor,fontFamily",
-        },
-      });
-    }
-
-    const actors = flow.actors;
-    if (actors.length === 0) return;
-
-    const actorColors: RgbColor[] = [
-      COLORS.actor1, COLORS.actor2, COLORS.actor3, COLORS.actor4, COLORS.actor5,
-    ];
-
-    // スイムレーンレイアウト計算
-    const laneWidth = Math.min(Math.floor(7_600_000 / actors.length), 2_500_000);
-    const laneStartX = 800_000 + Math.floor((8_400_000 - laneWidth * actors.length) / 2);
-    const headerY = 1_500_000;
-    const headerHeight = 350_000;
-    const stepStartY = headerY + headerHeight + 100_000;
-    const stepHeight = 300_000;
-    const stepGap = 80_000;
-
-    // アクター名マップ
-    const actorIndex = new Map<string, number>();
-    actors.forEach((a, i) => actorIndex.set(a, i));
-
-    // アクターヘッダー
-    for (let i = 0; i < actors.length; i++) {
-      const headerId = uid("actor_header");
-      const color = actorColors[i % actorColors.length];
-
-      requests.push({
-        createShape: {
-          objectId: headerId,
-          shapeType: "RECTANGLE",
-          elementProperties: {
-            pageObjectId: slideId,
-            size: {
-              width: { magnitude: laneWidth - 20_000, unit: "EMU" },
-              height: { magnitude: headerHeight, unit: "EMU" },
-            },
-            transform: {
-              scaleX: 1, scaleY: 1,
-              translateX: laneStartX + i * laneWidth + 10_000,
-              translateY: headerY,
-              unit: "EMU",
-            },
-          },
-        },
-      });
-      requests.push({
-        updateShapeProperties: {
-          objectId: headerId,
-          shapeProperties: {
-            shapeBackgroundFill: { solidFill: { color: { rgbColor: color } } },
-            outline: { outlineFill: { solidFill: { color: { rgbColor: COLORS.mediumBlue } } }, weight: { magnitude: 1, unit: "PT" } },
-          },
-          fields: "shapeBackgroundFill,outline",
-        },
-      });
-      requests.push({
-        insertText: { objectId: headerId, text: actors[i], insertionIndex: 0 },
-      });
-      requests.push({
-        updateTextStyle: {
-          objectId: headerId,
-          style: {
-            fontSize: { magnitude: 10, unit: "PT" },
-            bold: true,
-            fontFamily: "Noto Sans JP",
-          },
-          textRange: { type: "ALL" },
-          fields: "fontSize,bold,fontFamily",
-        },
-      });
-      requests.push({
-        updateParagraphStyle: {
-          objectId: headerId,
-          style: { alignment: "CENTER" },
-          textRange: { type: "ALL" },
-          fields: "alignment",
-        },
-      });
-    }
-
-    // ステップ配置
-    const stepIds: string[] = [];
-    const stepCenterPositions: Array<{ x: number; y: number }> = [];
-
-    for (let i = 0; i < flow.steps.length; i++) {
-      const step = flow.steps[i];
-      const aIdx = actorIndex.get(step.actor) ?? 0;
-      const y = stepStartY + i * (stepHeight + stepGap);
-      const x = laneStartX + aIdx * laneWidth + 10_000;
-
-      const isBranch = step.branchCondition !== "";
-      const shapeType = isBranch ? "DIAMOND" : "ROUND_RECTANGLE";
-      const shapeId = uid("step");
-
-      const shapeWidth = laneWidth - 40_000;
-      const shapeHeight = isBranch ? stepHeight + 60_000 : stepHeight;
-
-      requests.push({
-        createShape: {
-          objectId: shapeId,
-          shapeType,
-          elementProperties: {
-            pageObjectId: slideId,
-            size: {
-              width: { magnitude: shapeWidth, unit: "EMU" },
-              height: { magnitude: shapeHeight, unit: "EMU" },
-            },
-            transform: {
-              scaleX: 1, scaleY: 1,
-              translateX: x + 10_000,
-              translateY: y,
-              unit: "EMU",
-            },
-          },
-        },
-      });
-
-      const bgColor = isBranch ? COLORS.lightBlue : COLORS.white;
-      requests.push({
-        updateShapeProperties: {
-          objectId: shapeId,
-          shapeProperties: {
-            shapeBackgroundFill: { solidFill: { color: { rgbColor: bgColor } } },
-            outline: {
-              outlineFill: { solidFill: { color: { rgbColor: COLORS.mediumBlue } } },
-              weight: { magnitude: 1, unit: "PT" },
-            },
-          },
-          fields: "shapeBackgroundFill,outline",
-        },
-      });
-
-      const labelText = isBranch
-        ? `${step.stepNumber}. ${step.branchCondition}`
-        : `${step.stepNumber}. ${step.action}`;
-
-      requests.push({
-        insertText: { objectId: shapeId, text: labelText, insertionIndex: 0 },
-      });
-      requests.push({
-        updateTextStyle: {
-          objectId: shapeId,
-          style: {
-            fontSize: { magnitude: 8, unit: "PT" },
-            fontFamily: "Noto Sans JP",
-          },
-          textRange: { type: "ALL" },
-          fields: "fontSize,fontFamily",
-        },
-      });
-      requests.push({
-        updateParagraphStyle: {
-          objectId: shapeId,
-          style: { alignment: "CENTER" },
-          textRange: { type: "ALL" },
-          fields: "alignment",
-        },
-      });
-
-      stepIds.push(shapeId);
-      stepCenterPositions.push({
-        x: x + 10_000 + Math.floor(shapeWidth / 2),
-        y: y + Math.floor(shapeHeight / 2),
-      });
-    }
-
-    // ステップ間の矢印（コネクター）
-    for (let i = 0; i < stepIds.length - 1; i++) {
-      const lineId = uid("connector");
-      requests.push({
-        createLine: {
-          objectId: lineId,
-          lineCategory: "STRAIGHT",
-          elementProperties: {
-            pageObjectId: slideId,
-            size: {
-              width: { magnitude: Math.abs(stepCenterPositions[i + 1].x - stepCenterPositions[i].x) || 1, unit: "EMU" },
-              height: { magnitude: stepGap + 20_000, unit: "EMU" },
-            },
-            transform: {
-              scaleX: 1, scaleY: 1,
-              translateX: Math.min(stepCenterPositions[i].x, stepCenterPositions[i + 1].x),
-              translateY: stepCenterPositions[i].y + Math.floor(stepHeight / 2),
-              unit: "EMU",
-            },
-          },
-        },
-      });
-      requests.push({
-        updateLineProperties: {
-          objectId: lineId,
-          lineProperties: {
-            lineFill: { solidFill: { color: { rgbColor: COLORS.mediumBlue } } },
-            weight: { magnitude: 1.5, unit: "PT" },
-            endArrow: "OPEN_ARROW",
-          },
-          fields: "lineFill,weight,endArrow",
-        },
-      });
-    }
-  }
-
-  // ── Private: 画面一覧スライド ──
-
-  private buildScreenListSlides(requests: SlideRequest[], data: ClientRequirementsDto): void {
-    const screens = data.screens;
-    const perPage = 8;
-    const pages = Math.ceil(screens.length / perPage);
-
-    for (let page = 0; page < pages; page++) {
-      const slideId = uid("screen");
-      requests.push({ createSlide: { objectId: slideId } });
-
-      const suffix = pages > 1 ? ` (${page + 1}/${pages})` : "";
-      this.addSlideTitle(requests, slideId, `画面一覧${suffix}`);
-
-      const pageScreens = screens.slice(page * perPage, (page + 1) * perPage);
-      const rows = pageScreens.length + 1;
-      const cols = 4;
-      const tableId = uid("screen_table");
-
-      requests.push({
-        createTable: {
-          objectId: tableId,
-          elementProperties: {
-            pageObjectId: slideId,
-            size: {
-              width: { magnitude: 8_400_000, unit: "EMU" },
-              height: { magnitude: Math.min(rows * 400_000, 3_600_000), unit: "EMU" },
-            },
-            transform: { scaleX: 1, scaleY: 1, translateX: 800_000, translateY: 1_200_000, unit: "EMU" },
-          },
-          rows,
-          columns: cols,
-        },
-      });
-
-      // ヘッダー
-      const headers = ["No", "画面ID", "画面名", "目的・概要"];
-      for (let c = 0; c < cols; c++) {
-        requests.push({
-          insertText: {
-            objectId: tableId,
-            cellLocation: { rowIndex: 0, columnIndex: c },
-            text: headers[c],
-            insertionIndex: 0,
-          },
-        });
-      }
-      requests.push({
-        updateTableCellProperties: {
-          objectId: tableId,
-          tableRange: { location: { rowIndex: 0, columnIndex: 0 }, rowSpan: 1, columnSpan: cols },
-          tableCellProperties: {
-            tableCellBackgroundFill: {
-              solidFill: { color: { rgbColor: COLORS.headerBlue } },
-            },
-          },
-          fields: "tableCellBackgroundFill",
-        },
-      });
-
-      // データ
-      for (let i = 0; i < pageScreens.length; i++) {
-        const scr = pageScreens[i];
-        const rowData = [
-          String(page * perPage + i + 1),
-          scr.screenId,
-          scr.screenName,
-          scr.description,
-        ];
-        for (let c = 0; c < cols; c++) {
-          requests.push({
-            insertText: {
-              objectId: tableId,
-              cellLocation: { rowIndex: i + 1, columnIndex: c },
-              text: rowData[c],
-              insertionIndex: 0,
-            },
-          });
-        }
-      }
-
-      requests.push({
-        updateTextStyle: {
-          objectId: tableId,
-          style: { fontSize: { magnitude: 10, unit: "PT" }, fontFamily: "Noto Sans JP" },
-          textRange: { type: "ALL" },
-          fields: "fontSize,fontFamily",
-        },
-      });
-    }
-  }
-
-  // ── Private: パラメータスライド ──
-
-  private buildParametersSlides(requests: SlideRequest[], data: ClientRequirementsDto): void {
-    // 入力パラメータ
-    if (data.inputParameters.length > 0) {
-      this.buildParameterTable(requests, "入力パラメータ", data.inputParameters);
-    }
-
-    // 出力パラメータ
-    if (data.outputParameters.length > 0) {
-      this.buildParameterTable(requests, "出力パラメータ", data.outputParameters);
-    }
-  }
-
-  private buildParameterTable(
-    requests: SlideRequest[],
-    title: string,
-    params: ClientRequirementsDto["inputParameters"],
-  ): void {
-    const perPage = 8;
-    const pages = Math.ceil(params.length / perPage);
-
-    for (let page = 0; page < pages; page++) {
-      const slideId = uid("param");
-      requests.push({ createSlide: { objectId: slideId } });
-
-      const suffix = pages > 1 ? ` (${page + 1}/${pages})` : "";
-      this.addSlideTitle(requests, slideId, `${title}${suffix}`);
-
-      const pageParams = params.slice(page * perPage, (page + 1) * perPage);
-      const rows = pageParams.length + 1;
-      const cols = 5;
-      const tableId = uid("param_table");
-
-      requests.push({
-        createTable: {
-          objectId: tableId,
-          elementProperties: {
-            pageObjectId: slideId,
-            size: {
-              width: { magnitude: 8_400_000, unit: "EMU" },
-              height: { magnitude: Math.min(rows * 400_000, 3_600_000), unit: "EMU" },
-            },
-            transform: { scaleX: 1, scaleY: 1, translateX: 800_000, translateY: 1_200_000, unit: "EMU" },
-          },
-          rows,
-          columns: cols,
-        },
-      });
-
-      // ヘッダー
-      const headers = ["No", "データID", "項目名", "型", "備考"];
-      for (let c = 0; c < cols; c++) {
-        requests.push({
-          insertText: {
-            objectId: tableId,
-            cellLocation: { rowIndex: 0, columnIndex: c },
-            text: headers[c],
-            insertionIndex: 0,
-          },
-        });
-      }
-      requests.push({
-        updateTableCellProperties: {
-          objectId: tableId,
-          tableRange: { location: { rowIndex: 0, columnIndex: 0 }, rowSpan: 1, columnSpan: cols },
-          tableCellProperties: {
-            tableCellBackgroundFill: {
-              solidFill: { color: { rgbColor: COLORS.headerBlue } },
-            },
-          },
-          fields: "tableCellBackgroundFill",
-        },
-      });
-
-      // データ
-      for (let i = 0; i < pageParams.length; i++) {
-        const p = pageParams[i];
-        const rowData = [String(p.no), p.dataId, p.itemName, p.type, p.remarks];
-        for (let c = 0; c < cols; c++) {
-          requests.push({
-            insertText: {
-              objectId: tableId,
-              cellLocation: { rowIndex: i + 1, columnIndex: c },
-              text: rowData[c],
-              insertionIndex: 0,
-            },
-          });
-        }
-      }
-
-      requests.push({
-        updateTextStyle: {
-          objectId: tableId,
-          style: { fontSize: { magnitude: 10, unit: "PT" }, fontFamily: "Noto Sans JP" },
-          textRange: { type: "ALL" },
-          fields: "fontSize,fontFamily",
-        },
-      });
-    }
-  }
-
-  // ── Private: 用語集スライド ──
-
-  private buildTerminologySlides(requests: SlideRequest[], data: ClientRequirementsDto): void {
-    const terms = data.terminology;
-    const perPage = 10;
-    const pages = Math.ceil(terms.length / perPage);
-
-    for (let page = 0; page < pages; page++) {
-      const slideId = uid("term");
-      requests.push({ createSlide: { objectId: slideId } });
-
-      const suffix = pages > 1 ? ` (${page + 1}/${pages})` : "";
-      this.addSlideTitle(requests, slideId, `用語集${suffix}`);
-
-      const pageTerms = terms.slice(page * perPage, (page + 1) * perPage);
-      const rows = pageTerms.length + 1;
-      const cols = 2;
-      const tableId = uid("term_table");
-
-      requests.push({
-        createTable: {
-          objectId: tableId,
-          elementProperties: {
-            pageObjectId: slideId,
-            size: {
-              width: { magnitude: 8_400_000, unit: "EMU" },
-              height: { magnitude: Math.min(rows * 350_000, 3_600_000), unit: "EMU" },
-            },
-            transform: { scaleX: 1, scaleY: 1, translateX: 800_000, translateY: 1_200_000, unit: "EMU" },
-          },
-          rows,
-          columns: cols,
-        },
-      });
-
-      // ヘッダー
-      const headers = ["用語", "定義"];
-      for (let c = 0; c < cols; c++) {
-        requests.push({
-          insertText: {
-            objectId: tableId,
-            cellLocation: { rowIndex: 0, columnIndex: c },
-            text: headers[c],
-            insertionIndex: 0,
-          },
-        });
-      }
-      requests.push({
-        updateTableCellProperties: {
-          objectId: tableId,
-          tableRange: { location: { rowIndex: 0, columnIndex: 0 }, rowSpan: 1, columnSpan: cols },
-          tableCellProperties: {
-            tableCellBackgroundFill: {
-              solidFill: { color: { rgbColor: COLORS.headerBlue } },
-            },
-          },
-          fields: "tableCellBackgroundFill",
-        },
-      });
-
-      // データ
-      for (let i = 0; i < pageTerms.length; i++) {
-        const t = pageTerms[i];
-        const rowData = [t.term, t.definition];
-        for (let c = 0; c < cols; c++) {
-          requests.push({
-            insertText: {
-              objectId: tableId,
-              cellLocation: { rowIndex: i + 1, columnIndex: c },
-              text: rowData[c],
-              insertionIndex: 0,
-            },
-          });
-        }
-      }
-
-      requests.push({
-        updateTextStyle: {
-          objectId: tableId,
-          style: { fontSize: { magnitude: 10, unit: "PT" }, fontFamily: "Noto Sans JP" },
-          textRange: { type: "ALL" },
-          fields: "fontSize,fontFamily",
-        },
-      });
-    }
-  }
-
-  // ── Private: 共通ヘルパー ──
-
   /**
-   * スライドにタイトルを追加する。
+   * ClientRequirementsDtoからデフォルトのスライドプランを生成する。
+   * AI による構成計画がない場合の決定的なフォールバック。
    */
-  private addSlideTitle(requests: SlideRequest[], slideId: string, title: string): void {
-    const titleId = uid("slide_title");
-    requests.push({
-      createShape: {
-        objectId: titleId,
-        shapeType: "TEXT_BOX",
-        elementProperties: {
-          pageObjectId: slideId,
-          size: { width: { magnitude: 8_400_000, unit: "EMU" }, height: { magnitude: 600_000, unit: "EMU" } },
-          transform: { scaleX: 1, scaleY: 1, translateX: 800_000, translateY: 300_000, unit: "EMU" },
-        },
-      },
-    });
-    requests.push({
-      insertText: { objectId: titleId, text: title, insertionIndex: 0 },
-    });
-    requests.push({
-      updateTextStyle: {
-        objectId: titleId,
-        style: {
-          fontSize: { magnitude: 24, unit: "PT" },
-          foregroundColor: { opaqueColor: { rgbColor: COLORS.darkBlue } },
-          bold: true,
-          fontFamily: "Noto Sans JP",
-        },
-        textRange: { type: "ALL" },
-        fields: "fontSize,foregroundColor,bold,fontFamily",
-      },
+  private buildDefaultPlan(data: ClientRequirementsDto): SlidePlanDto {
+    const slides: SlideDescriptor[] = [];
+
+    // 表紙
+    slides.push({
+      slideType: "cover",
+      projectName: data.projectInfo.projectName,
+      subtitle: data.projectInfo.subtitle || data.projectInfo.documentTitle,
+      version: data.projectInfo.version,
+      author: data.projectInfo.author,
+      date: data.projectInfo.createdDate,
     });
 
-    // タイトル下線
-    const underlineId = uid("title_underline");
-    requests.push({
-      createLine: {
-        objectId: underlineId,
-        lineCategory: "STRAIGHT",
-        elementProperties: {
-          pageObjectId: slideId,
-          size: { width: { magnitude: 8_400_000, unit: "EMU" }, height: { magnitude: 0, unit: "EMU" } },
-          transform: { scaleX: 1, scaleY: 1, translateX: 800_000, translateY: 900_000, unit: "EMU" },
-        },
-      },
-    });
-    requests.push({
-      updateLineProperties: {
-        objectId: underlineId,
-        lineProperties: {
-          lineFill: { solidFill: { color: { rgbColor: COLORS.accentBlue } } },
-          weight: { magnitude: 2, unit: "PT" },
-        },
-        fields: "lineFill,weight",
-      },
-    });
+    // 導入効果
+    if (data.projectInfo.keyBenefits.length > 0) {
+      slides.push({
+        slideType: "benefits",
+        title: "導入効果",
+        benefits: data.projectInfo.keyBenefits.map((text, i) => ({
+          icon: ["🚀", "✨", "📈", "🎯"][i] || "✨",
+          text,
+        })),
+      });
+    }
+
+    // 処理概要
+    if (data.processOverview) {
+      slides.push({
+        slideType: "overview",
+        title: "プロジェクト概要",
+        icon: "📋",
+        body: data.processOverview,
+      });
+    }
+
+    // 要件カテゴリ全体像
+    const grouped = new Map<string, typeof data.requirements>();
+    for (const req of data.requirements) {
+      const list = grouped.get(req.category) || [];
+      list.push(req);
+      grouped.set(req.category, list);
+    }
+
+    if (grouped.size > 1) {
+      slides.push({
+        slideType: "card-grid",
+        title: "機能要件の全体像",
+        cards: [...grouped.entries()].map(([cat, items]) => ({
+          icon: "💡",
+          heading: cat,
+          subtext: `${items.length}件の要件`,
+        })),
+      });
+    }
+
+    // カテゴリ別要件詳細
+    for (const [cat, items] of grouped) {
+      const perPage = 3;
+      const pages = Math.ceil(items.length / perPage);
+      for (let page = 0; page < pages; page++) {
+        const suffix = pages > 1 ? ` (${page + 1}/${pages})` : "";
+        slides.push({
+          slideType: "detail-cards",
+          title: `${cat}${suffix}`,
+          cards: items.slice(page * perPage, (page + 1) * perPage).map((req) => ({
+            id: req.id,
+            name: req.name,
+            description: req.description,
+            badge: req.priority === "Must" ? "必須" : req.priority === "Should" ? "推奨" : "任意",
+            badgeColor: req.priority === "Must" ? "orange" as const : req.priority === "Should" ? "green" as const : "gray" as const,
+          })),
+        });
+      }
+    }
+
+    // 業務フロー → シーケンス図
+    for (const flow of data.businessFlows) {
+      const stepsPerPage = 6;
+      const totalPages = Math.ceil(flow.steps.length / stepsPerPage);
+
+      for (let page = 0; page < totalPages; page++) {
+        const suffix = totalPages > 1 ? ` (${page + 1}/${totalPages})` : "";
+        const pageSteps = flow.steps.slice(page * stepsPerPage, (page + 1) * stepsPerPage);
+
+        slides.push({
+          slideType: "sequence-diagram",
+          title: `${flow.flowName}${suffix}`,
+          summary: flow.flowSummary || flow.description,
+          actors: flow.actors.map((name, i) => ({
+            name,
+            icon: ["👤", "🏢", "🖥️", "👥", "🏪"][i] || "👤",
+            color: (["red", "green", "orange", "blue", "purple"] as const)[i % 5],
+          })),
+          steps: pageSteps.map((step) => ({
+            stepNumber: step.stepNumber,
+            fromActor: step.actor,
+            toActor: step.actor,
+            label: step.branchCondition || step.action,
+            sublabel: step.details || "",
+            style: step.branchCondition
+              ? "branch" as const
+              : step.stepNumber === 1 ? "start" as const
+              : step.stepNumber === flow.steps.length ? "end" as const
+              : "normal" as const,
+          })),
+        });
+      }
+    }
+
+    // 画面一覧
+    if (data.screens.length > 0) {
+      const perPage = 4;
+      const pages = Math.ceil(data.screens.length / perPage);
+      for (let page = 0; page < pages; page++) {
+        const suffix = pages > 1 ? ` (${page + 1}/${pages})` : "";
+        slides.push({
+          slideType: "screen-list",
+          title: `画面一覧${suffix}`,
+          screens: data.screens.slice(page * perPage, (page + 1) * perPage).map((scr) => ({
+            icon: scr.icon || "📋",
+            name: scr.screenName,
+            description: scr.description,
+          })),
+        });
+      }
+    }
+
+    // パラメータ
+    const buildParamTable = (title: string, params: typeof data.inputParameters) => {
+      const perPage = 6;
+      const pages = Math.ceil(params.length / perPage);
+      for (let page = 0; page < pages; page++) {
+        const suffix = pages > 1 ? ` (${page + 1}/${pages})` : "";
+        slides.push({
+          slideType: "data-table",
+          title: `${title}${suffix}`,
+          columns: ["No", "項目名", "型", "説明"],
+          rows: params.slice(page * perPage, (page + 1) * perPage).map((p) => [
+            String(p.no), p.itemName, p.type, p.remarks,
+          ]),
+        });
+      }
+    };
+
+    if (data.inputParameters.length > 0) buildParamTable("📥 入力データ項目", data.inputParameters);
+    if (data.outputParameters.length > 0) buildParamTable("📤 出力データ項目", data.outputParameters);
+
+    // 用語集
+    if (data.terminology.length > 0) {
+      const perPage = 6;
+      const pages = Math.ceil(data.terminology.length / perPage);
+      for (let page = 0; page < pages; page++) {
+        const suffix = pages > 1 ? ` (${page + 1}/${pages})` : "";
+        slides.push({
+          slideType: "data-table",
+          title: `📖 用語集${suffix}`,
+          columns: ["用語", "意味"],
+          rows: data.terminology.slice(page * perPage, (page + 1) * perPage).map((t) => [
+            t.term, t.definition,
+          ]),
+        });
+      }
+    }
+
+    return { slides };
   }
 }

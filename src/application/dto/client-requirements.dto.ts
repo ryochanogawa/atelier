@@ -11,10 +11,12 @@ import { z } from "zod";
 const ProjectInfoSchema = z.object({
   projectName: z.string(),
   documentTitle: z.string(),
+  subtitle: z.string().default(""),
   version: z.string().default("1.0"),
   author: z.string().default(""),
   createdDate: z.string().default(""),
   updatedDate: z.string().default(""),
+  keyBenefits: z.array(z.string()).default([]),
 });
 
 const RequirementItemSchema = z.object({
@@ -39,14 +41,21 @@ const FlowStepSchema = z.object({
   stepNumber: z.number(),
   actor: z.string(),
   action: z.string(),
-  details: z.string().default(""),
-  branchCondition: z.string().default(""),
-  branchYes: z.union([z.string(), z.number()]).default(""),
-  branchNo: z.union([z.string(), z.number()]).default(""),
-});
+  details: z.string().nullable().default(""),
+  branchCondition: z.string().nullable().default(""),
+  branchYes: z.union([z.string(), z.number()]).nullable().default(""),
+  branchNo: z.union([z.string(), z.number()]).nullable().default(""),
+}).transform((v) => ({
+  ...v,
+  details: v.details ?? "",
+  branchCondition: v.branchCondition ?? "",
+  branchYes: v.branchYes ?? "",
+  branchNo: v.branchNo ?? "",
+}));
 
 const BusinessFlowSchema = z.object({
   flowName: z.string(),
+  flowSummary: z.string().default(""),
   description: z.string().default(""),
   actors: z.array(z.string()),
   steps: z.array(FlowStepSchema),
@@ -55,6 +64,7 @@ const BusinessFlowSchema = z.object({
 const ScreenItemSchema = z.object({
   screenId: z.string(),
   screenName: z.string(),
+  icon: z.string().default("📋"),
   description: z.string().default(""),
   mainItems: z.array(z.string()).default([]),
   relatedFlows: z.array(z.string()).default([]),

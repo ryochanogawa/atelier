@@ -1,0 +1,13 @@
+name: slide-composition
+description: 顧客要件JSONからスライド構成プラン（slide plan）を生成する
+
+strokes:
+  - name: slide-composition
+    palette: business-analyst
+    instruction: slide-plan
+    contract: slide-plan-output
+    allow_edit: true
+    inputs:
+      - client_requirements_json
+    outputs:
+      - slide_plan_json

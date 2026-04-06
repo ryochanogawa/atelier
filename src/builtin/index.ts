@@ -27,6 +27,7 @@ const BUILTIN_COMMISSIONS = [
   "spec-tasks",
   "test-enhancement",
   "client-requirements",
+  "slide-composition",
 ] as const;
 const BUILTIN_PALETTES = [
   "planner",
@@ -69,6 +70,7 @@ const BUILTIN_CONTRACTS = [
   "security-review-output",
   "design-output",
   "client-requirements-output",
+  "slide-plan-output",
 ] as const;
 
 export type BuiltinCommissionName = (typeof BUILTIN_COMMISSIONS)[number];

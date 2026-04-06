@@ -130,11 +130,17 @@ async function getOAuthClient(
       });
 
       console.log("\n━━━ Google認証が必要です ━━━");
-      console.log("ブラウザが開きます。Googleアカウントでログインしてください。\n");
+      console.log("以下のURLをブラウザで開いてGoogleアカウントでログインしてください:\n");
+      console.log(authUrl + "\n");
 
-      // ブラウザを自動で開く
+      // ブラウザを自動で開く（プラットフォーム対応）
       import("node:child_process").then(({ exec }) => {
-        exec(`open "${authUrl}"`);
+        const cmd = process.platform === "win32"
+          ? `start "" "${authUrl}"`
+          : process.platform === "darwin"
+            ? `open "${authUrl}"`
+            : `xdg-open "${authUrl}" 2>/dev/null || wslview "${authUrl}" 2>/dev/null`;
+        exec(cmd);
       });
     });
 

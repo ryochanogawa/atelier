@@ -669,14 +669,38 @@ export function createSpecCommand(): Command {
           spinner.stop();
           printSuccess(`要件定義書 JSON を保存しました: .atelier/specs/${specDirName}/client-requirements.json`);
         } else if (outputFormat === "slides") {
-          // スライド出力
+          // Phase 2: AI がスライド構成を計画
+          spinner.text = "AI がスライド構成を計画中...";
+          await runCommission(projectPath, "slide-composition", {
+            client_requirements_json: JSON.stringify(dto),
+            spec_dir: specDirName!,
+          });
+
+          // スライドプランを読み込み
+          const slidePlanPath = path.join(specDir, "slide-plan.json");
+          let plan: import("../../application/dto/slide-plan.dto.js").SlidePlanDto | null = null;
+
+          if (await fileExists(slidePlanPath)) {
+            const { parseSlidePlan } = await import(
+              "../../application/dto/slide-plan.dto.js"
+            );
+            try {
+              const rawPlan = await readTextFile(slidePlanPath);
+              plan = parseSlidePlan(rawPlan);
+            } catch (e) {
+              printWarning(`スライドプランの解析に失敗しました。デフォルト構成で生成します: ${(e as Error).message}`);
+            }
+          }
+
+          // Phase 3: スライド描画
           spinner.text = "プレゼンテーションを作成中...";
           const { GoogleSlidesAdapter } = await import(
             "../../adapters/presentation/google-slides.adapter.js"
           );
-
           const adapter = new GoogleSlidesAdapter();
-          const result = await adapter.create(dto);
+          const result = plan
+            ? await adapter.createFromPlan(plan)
+            : await adapter.create(dto);
 
           spinner.stop();
           printSuccess("プレゼンテーションを作成しました");

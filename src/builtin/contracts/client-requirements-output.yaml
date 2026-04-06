@@ -1,5 +1,5 @@
 name: client-requirements-output
-description: 顧客向け要件定義書の構造化JSON出力フォーマット。スプレッドシート変換用。
+description: 顧客向け要件定義書の構造化JSON出力フォーマット。スプレッドシート・スライド変換用。
 
 format: |
   以下のJSON形式で出力してください。必ず有効なJSONとして出力すること。
@@ -10,29 +10,35 @@ format: |
     "projectInfo": {
       "projectName": "プロジェクト名",
       "documentTitle": "ドキュメントタイトル",
+      "subtitle": "お客様にとっての一言バリュー（例: 業務効率を50%改善する統合管理システム）",
       "version": "1.0",
       "author": "作成者",
       "createdDate": "YYYY-MM-DD",
-      "updatedDate": "YYYY-MM-DD"
+      "updatedDate": "YYYY-MM-DD",
+      "keyBenefits": [
+        "導入効果1（例: 申請〜承認の所要時間を半減）",
+        "導入効果2（例: 手作業によるミスをゼロに）",
+        "導入効果3（例: リアルタイムでの進捗把握が可能に）"
+      ]
     },
-    "processOverview": "処理概要のテキスト説明",
+    "processOverview": "処理概要: お客様の業務がどう変わるかを3〜5行で説明",
     "requirements": [
       {
         "id": "REQ-001",
-        "category": "カテゴリ名",
-        "name": "要件名",
-        "description": "要件の詳細説明",
+        "category": "カテゴリ名（業務観点）",
+        "name": "要件名（お客様にとっての機能名）",
+        "description": "お客様にとっての価値・メリットを含めた説明",
         "priority": "Must|Should|Could",
-        "acceptanceCriteria": "受け入れ基準"
+        "acceptanceCriteria": "お客様が確認できる受け入れ基準"
       }
     ],
     "inputParameters": [
       {
         "no": 1,
         "dataId": "データID",
-        "itemName": "項目名",
+        "itemName": "項目名（業務用語）",
         "digits": "桁数",
-        "type": "型（文字列/数値/日付等）",
+        "type": "型（文字/数値/日付等）",
         "remarks": "摘要"
       }
     ],
@@ -48,16 +54,17 @@ format: |
     ],
     "businessFlows": [
       {
-        "flowName": "業務フロー名",
+        "flowName": "業務フロー名（業務動作ベース）",
+        "flowSummary": "このフローの目的を1文で（例: 担当者が新規申請を提出し、上長の承認を得るまでの流れ）",
         "description": "フローの概要説明",
-        "actors": ["アクター1", "アクター2", "システム"],
+        "actors": ["申請者", "承認者", "システム"],
         "steps": [
           {
             "stepNumber": 1,
-            "actor": "アクター名",
-            "action": "操作・処理内容",
-            "details": "補足説明",
-            "branchCondition": "分岐条件（ある場合）",
+            "actor": "アクター名（業務上の役割名）",
+            "action": "具体的な業務動作（例: 申請書を提出する）",
+            "details": "補足: なぜ必要か、何が起きるか",
+            "branchCondition": "業務判断の条件（例: 金額が10万円以上か）",
             "branchYes": "Yesの場合の遷移先ステップ番号",
             "branchNo": "Noの場合の遷移先ステップ番号"
           }
@@ -67,8 +74,9 @@ format: |
     "screens": [
       {
         "screenId": "SCR-001",
-        "screenName": "画面名",
-        "description": "画面の目的・概要",
+        "screenName": "画面名（業務動作ベース）",
+        "icon": "画面を表す絵文字1つ（例: 📋, 📊, ✅, 📝, 🔍, 📨）",
+        "description": "お客様がこの画面でできること",
         "mainItems": ["主な表示・入力項目"],
         "relatedFlows": ["関連する業務フロー名"],
         "transitions": ["遷移先画面ID"]
@@ -77,7 +85,7 @@ format: |
     "terminology": [
       {
         "term": "用語",
-        "definition": "定義・説明",
+        "definition": "お客様の言葉での定義・説明",
         "relatedDomain": "関連ドメイン"
       }
     ],
@@ -95,12 +103,12 @@ fields:
   - name: projectInfo
     type: object
     required: true
-    description: プロジェクト基本情報
+    description: プロジェクト基本情報（subtitle, keyBenefitsを含む）
 
   - name: processOverview
     type: string
     required: true
-    description: 処理概要の説明文
+    description: 処理概要の説明文（お客様の業務がどう変わるか）
 
   - name: requirements
     type: array
@@ -120,12 +128,12 @@ fields:
   - name: businessFlows
     type: array
     required: true
-    description: 業務フロー一覧（スイムレーン形式のステップ情報を含む）
+    description: 業務フロー一覧（flowSummaryとスイムレーン形式のステップ情報を含む）
 
   - name: screens
     type: array
     required: false
-    description: 画面一覧
+    description: 画面一覧（iconフィールドを含む）
 
   - name: terminology
     type: array
