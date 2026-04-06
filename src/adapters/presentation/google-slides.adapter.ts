@@ -86,7 +86,11 @@ export class GoogleSlidesAdapter implements PresentationPort {
     for (const descriptor of plan.slides) {
       const renderer = RENDERERS[descriptor.slideType];
       if (renderer) {
-        renderer.render(requests, descriptor as never);
+        try {
+          renderer.render(requests, descriptor as never);
+        } catch (e) {
+          console.error(`[WARN] スライド "${descriptor.slideType}" の描画でエラー: ${(e as Error).message}`);
+        }
       }
     }
 
@@ -148,7 +152,7 @@ export class GoogleSlidesAdapter implements PresentationPort {
         slideType: "benefits",
         title: "導入効果",
         benefits: data.projectInfo.keyBenefits.map((text, i) => ({
-          icon: ["🚀", "✨", "📈", "🎯"][i] || "✨",
+          icon: ["✓", "✓", "✓", "✓"][i] || "✓",
           text,
         })),
       });
@@ -177,7 +181,7 @@ export class GoogleSlidesAdapter implements PresentationPort {
         slideType: "card-grid",
         title: "機能要件の全体像",
         cards: [...grouped.entries()].map(([cat, items]) => ({
-          icon: "💡",
+          icon: "📋",
           heading: cat,
           subtext: `${items.length}件の要件`,
         })),

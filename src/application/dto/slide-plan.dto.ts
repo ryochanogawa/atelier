@@ -74,15 +74,15 @@ const SequenceDiagramSlideSchema = z.object({
   slideType: z.literal("sequence-diagram"),
   title: z.string(),
   summary: z.string().default(""),
-  actors: z.array(SequenceActorSchema).min(2).max(5),
-  steps: z.array(SequenceStepSchema).max(8),
+  actors: z.array(SequenceActorSchema).min(2).max(8),
+  steps: z.array(SequenceStepSchema).max(10),
 });
 
 const DataTableSlideSchema = z.object({
   slideType: z.literal("data-table"),
   title: z.string(),
-  columns: z.array(z.string()).min(2).max(5),
-  rows: z.array(z.array(z.string())).max(6),
+  columns: z.array(z.string()).min(2).max(10),
+  rows: z.array(z.array(z.string())).max(10),
 });
 
 const ScreenListSlideSchema = z.object({
@@ -103,13 +103,13 @@ const ArchitectureSlideSchema = z.object({
     name: z.string(),
     icon: z.string().default("👤"),
     color: z.enum(["red", "green", "orange", "blue", "purple", "teal"]).default("blue"),
-  })).min(2).max(5),
+  })).min(2).max(8),
   relationships: z.array(z.object({
     label: z.string(),
     description: z.string().default(""),
     fromActors: z.array(z.string()),
     toActors: z.array(z.string()),
-  })).max(4),
+  })).max(6),
 });
 
 // ── 統合スキーマ ──

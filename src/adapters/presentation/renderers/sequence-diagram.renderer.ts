@@ -260,8 +260,15 @@ export class SequenceDiagramRenderer implements SlideRenderer<SequenceDiagramSli
       const toIdx = actorIdx.get(step.toActor) ?? 0;
       const bg = STEP_COLORS[step.style] || STEP_COLORS.normal;
 
+      // テキスト長に応じてボックス高さとフォントサイズを動的計算
+      // 1行あたり約8文字（stepW依存）、1行の高さ約160,000 EMU (11pt)
+      const charsPerLine = Math.max(Math.floor(stepW / 160_000), 6);
+      const lineCount = Math.ceil(step.label.length / charsPerLine);
+      const dynamicH = Math.max(STEP_H, lineCount * 160_000 + 60_000);
+      const fontSize = step.label.length > 20 ? 10 : 11;
+
       // Y位置: ステップゾーン内に等間隔配置
-      const boxY = stepZoneTop + i * clampedRowH + Math.floor((clampedRowH - STEP_H) / 2);
+      const boxY = stepZoneTop + i * clampedRowH + Math.floor((clampedRowH - dynamicH) / 2);
 
       // X位置: toActorのライフレーン中央にステップボックスを配置
       const boxCX = actorCenterX[toIdx];
@@ -272,13 +279,13 @@ export class SequenceDiagramRenderer implements SlideRenderer<SequenceDiagramSli
         x: boxX,
         y: boxY,
         w: stepW,
-        h: STEP_H,
+        h: dynamicH,
         bg,
         borderColor: BORDER_COLOR,
         borderWeight: 1,
       });
       r.push({ insertText: { objectId: boxId, text: step.label, insertionIndex: 0 } });
-      styleText(r, boxId, { fontSize: 11, bold: false, color: BORDER_COLOR, align: "CENTER" });
+      styleText(r, boxId, { fontSize, bold: false, color: BORDER_COLOR, align: "CENTER" });
 
       stepBoxes.push({
         actorIndex: toIdx,
@@ -286,7 +293,7 @@ export class SequenceDiagramRenderer implements SlideRenderer<SequenceDiagramSli
         rightX: boxX + stepW,
         centerX: boxCX,
         topY: boxY,
-        botY: boxY + STEP_H,
+        botY: boxY + dynamicH,
       });
     }
 
@@ -310,11 +317,17 @@ export class SequenceDiagramRenderer implements SlideRenderer<SequenceDiagramSli
       }
     }
 
-    // 縦矢印: 同一アクター内の連続ステップ間
+    // 連続ステップ間の接続矢印（全ステップ間を矢印で繋ぐ）
     for (let i = 0; i < stepBoxes.length - 1; i++) {
       const curr = stepBoxes[i];
       const next = stepBoxes[i + 1];
+
       if (curr.actorIndex === next.actorIndex) {
+        // 同一アクター: 縦矢印（ボックス下端 → 次ボックス上端）
+        createArrow(r, s, curr.centerX, curr.botY, next.centerX, next.topY);
+      } else {
+        // 異なるアクター: 斜め矢印（現ボックス下端 → 次ボックス上端へ）
+        // 参考画像のスタイル: 現ボックスの下中央から次ボックスの上中央へ
         createArrow(r, s, curr.centerX, curr.botY, next.centerX, next.topY);
       }
     }
