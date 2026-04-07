@@ -549,7 +549,7 @@ export class CommissionRunnerService {
       prompt: fullPrompt,
       workingDirectory: this.deps.cwd,
       allowEdit: stroke.allowEdit,
-      timeoutMs: 600_000,
+      timeoutMs: 1_200_000,
       model: stroke.model,
       allowedTools: stroke.allowedTools,
       permissionMode: stroke.permissionMode,
@@ -666,7 +666,7 @@ export class CommissionRunnerService {
           prompt: fullPrompt,
           workingDirectory: this.deps.cwd,
           allowEdit: stroke.allowEdit,
-          timeoutMs: 600_000,
+          timeoutMs: 1_200_000,
           model: stroke.model,
           allowedTools: stroke.allowedTools,
         });
@@ -797,7 +797,7 @@ export class CommissionRunnerService {
         prompt: fullPrompt,
         workingDirectory: this.deps.cwd,
         allowEdit: stroke.allowEdit,
-        timeoutMs: 600_000,
+        timeoutMs: 1_200_000,
         model: stroke.model,
         allowedTools: stroke.allowedTools,
       });
@@ -873,7 +873,7 @@ export class CommissionRunnerService {
       prompt: decompositionPrompt,
       workingDirectory: this.deps.cwd,
       allowEdit: false,
-      timeoutMs: 600_000,
+      timeoutMs: 1_200_000,
       model: stroke.model,
       allowedTools: stroke.allowedTools,
     });
@@ -936,7 +936,7 @@ export class CommissionRunnerService {
           prompt: workerPrompt,
           workingDirectory: this.deps.cwd,
           allowEdit: workerAllowEdit,
-          timeoutMs: 600_000,
+          timeoutMs: 1_200_000,
           model: stroke.model,
           allowedTools: stroke.allowedTools,
         });

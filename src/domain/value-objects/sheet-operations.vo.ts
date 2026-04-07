@@ -83,6 +83,7 @@ export interface SheetDefinition {
   readonly rowHeights: readonly RowHeight[];
   readonly frozenRows?: number;
   readonly frozenCols?: number;
+  readonly hideGridlines?: boolean;
 }
 
 /** スプレッドシートドキュメント全体 */

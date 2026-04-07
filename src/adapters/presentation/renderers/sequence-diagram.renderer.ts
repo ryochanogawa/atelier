@@ -255,7 +255,7 @@ export class SequenceDiagramRenderer implements SlideRenderer<SequenceDiagramSli
 
     // ── ステップ配置（ステップ数に応じて動的スケーリング） ──
 
-    const stepZoneTop = LANE_Y + 120_000;
+    const stepZoneTop = ACTOR_Y + ACTOR_H + 80_000;
     const stepZoneBot = LANE_Y + dynamicLaneH - 30_000;
     const stepZone = stepZoneBot - stepZoneTop;
 

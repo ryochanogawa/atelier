@@ -50,6 +50,27 @@
 ### 8. 関連設定の整理
 - 初期設定や運用で必要な設定項目を整理する
 
+### 画面詳細設計の生成ルール
+- 各画面（screen）に対して、以下の詳細情報を生成する:
+  - inputParameters: その画面固有の入力パラメータ（no/dataId/itemName/digits/type/remarks）。その画面でユーザーが入力する項目のみ
+  - outputParameters: その画面固有の出力パラメータ（同形式）。その画面で表示・出力する項目のみ
+  - screenOverview: 画面の概要説明（2-3行）
+  - screenFlow: 画面操作のフロー（改行区切りの文字列。番号付き手順）
+  - initialDisplayItems: 初期表示内容（item/tableName/columnName/format）
+  - inputChecks: 入力チェック項目（item/checkContent/errorMessage）
+  - crudOperations: CRUD操作をDBテーブル単位で記述。**1列1行**で記述する（複数列をカンマ区切りにしない）
+    - operationType: select/insert/update/delete
+    - description: 操作の小見出し（例: 「tran_ntt_sim_stockテーブルの取得」）
+    - rows の各行:
+      - select: tableName, columnName(1列), method(取得方法), condition(WHERE条件をSQL風に)
+      - insert: tableName, columnName(1列), nullable(○/×), value(登録する具体的な値。入力値/固定値/サーバ日時/NULL等), validation(検証内容)
+      - update: tableName, columnName(1列), value(更新する具体的な値), condition(WHERE条件)
+    - **重要**: insert/updateでは value フィールドに具体的な値を必ず書く。空にしない
+  - additionalSections: AI判断で必要な追加セクション
+- DBテーブル名・列名は要件から推測して具体的な名前を付ける（英語スネークケース）
+- テーブル名の例: sim_inventory, sim_order, mnp_request, store_allocation等
+- 列名の例: iccid, sim_type, status, expiry_date, store_id等
+
 ## 重要な注意事項
 - **技術用語は絶対に使わない**: API、DB、クエリ、エンドポイント、マイグレーション等の技術用語は業務用語に置き換える。「サーバー」→「システム」、「レコード」→「データ」
 - **スライド映えを意識**: 長文を避け、箇条書き・短文で書く。1つの概念は1〜2文で

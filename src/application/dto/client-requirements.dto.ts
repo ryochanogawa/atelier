@@ -61,6 +61,40 @@ const BusinessFlowSchema = z.object({
   steps: z.array(FlowStepSchema),
 });
 
+const InitialDisplayItemSchema = z.object({
+  item: z.string(),
+  tableName: z.string(),
+  columnName: z.string(),
+  format: z.string(),
+});
+
+const InputCheckSchema = z.object({
+  item: z.string(),
+  checkContent: z.string(),
+  errorMessage: z.string(),
+});
+
+const CrudRowSchema = z.object({
+  tableName: z.string(),
+  columnName: z.string(),
+  method: z.string().optional(),
+  condition: z.string().optional(),
+  value: z.string().optional(),
+  nullable: z.string().optional(),
+  validation: z.string().optional(),
+});
+
+const CrudOperationSchema = z.object({
+  operationType: z.enum(["select", "insert", "update", "delete"]),
+  description: z.string(),
+  rows: z.array(CrudRowSchema),
+});
+
+const AdditionalSectionSchema = z.object({
+  title: z.string(),
+  content: z.string(),
+});
+
 const ScreenItemSchema = z.object({
   screenId: z.string(),
   screenName: z.string(),
@@ -69,6 +103,20 @@ const ScreenItemSchema = z.object({
   mainItems: z.array(z.string()).default([]),
   relatedFlows: z.array(z.string()).default([]),
   transitions: z.array(z.string()).default([]),
+  // 画面固有の入力/出力パラメータ
+  inputParameters: z.array(ParameterItemSchema).optional(),
+  outputParameters: z.array(ParameterItemSchema).optional(),
+  // 処理概要
+  screenOverview: z.string().optional(),
+  screenFlow: z.string().optional(),
+  // 初期表示内容
+  initialDisplayItems: z.array(InitialDisplayItemSchema).optional(),
+  // 入力チェック
+  inputChecks: z.array(InputCheckSchema).optional(),
+  // CRUD操作（DBテーブル単位）
+  crudOperations: z.array(CrudOperationSchema).optional(),
+  // AI判断の追加セクション
+  additionalSections: z.array(AdditionalSectionSchema).optional(),
 });
 
 const TerminologyItemSchema = z.object({

@@ -45,6 +45,8 @@ export class GoogleSheetsAdapter implements SpreadsheetPort {
             gridProperties: {
               frozenRowCount: sheet.frozenRows ?? 0,
               frozenColumnCount: sheet.frozenCols ?? 0,
+              columnCount: 46,
+              hideGridlines: sheet.hideGridlines ?? false,
             },
           },
         })),

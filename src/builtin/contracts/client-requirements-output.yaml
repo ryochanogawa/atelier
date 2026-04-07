@@ -79,7 +79,89 @@ format: |
         "description": "お客様がこの画面でできること",
         "mainItems": ["主な表示・入力項目"],
         "relatedFlows": ["関連する業務フロー名"],
-        "transitions": ["遷移先画面ID"]
+        "transitions": ["遷移先画面ID"],
+        "inputParameters": [
+          {
+            "no": 1,
+            "dataId": "データID",
+            "itemName": "この画面固有の入力項目名",
+            "digits": "桁数",
+            "type": "型",
+            "remarks": "摘要"
+          }
+        ],
+        "outputParameters": [
+          {
+            "no": 1,
+            "dataId": "データID",
+            "itemName": "この画面固有の出力項目名",
+            "digits": "桁数",
+            "type": "型",
+            "remarks": "摘要"
+          }
+        ],
+        "screenOverview": "画面の概要説明（2-3行で画面の目的・役割を記述）",
+        "screenFlow": "1. 操作手順ステップ1\n2. 操作手順ステップ2\n3. 操作手順ステップ3",
+        "initialDisplayItems": [
+          {
+            "item": "項目名",
+            "tableName": "取得テーブル名（英語スネークケース）",
+            "columnName": "列名（英語スネークケース）",
+            "format": "表示フォーマット"
+          }
+        ],
+        "inputChecks": [
+          {
+            "item": "項目名",
+            "checkContent": "チェック内容",
+            "errorMessage": "エラーメッセージ"
+          }
+        ],
+        "crudOperations": [
+          {
+            "operationType": "select",
+            "description": "○○テーブルの取得",
+            "rows": [
+              {
+                "tableName": "テーブル名",
+                "columnName": "列名（1行に1列。複数列なら行を分ける）",
+                "method": "取得方法（例: 一覧取得、1件取得、COUNT等）",
+                "condition": "取得条件（例: status = 1 AND agency_id = :agency_id）"
+              }
+            ]
+          },
+          {
+            "operationType": "insert",
+            "description": "○○テーブルへの追加",
+            "rows": [
+              {
+                "tableName": "テーブル名",
+                "columnName": "列名（1行に1列）",
+                "nullable": "○ or ×（NULL可否）",
+                "value": "登録する値（例: 入力値、固定値「1」、サーバ日時、NULL等）",
+                "validation": "検証内容（あれば）"
+              }
+            ]
+          },
+          {
+            "operationType": "update",
+            "description": "○○テーブルの更新",
+            "rows": [
+              {
+                "tableName": "テーブル名",
+                "columnName": "列名（1行に1列）",
+                "value": "更新する値（例: 3（販売完了）、サーバ日時等）",
+                "condition": "更新条件（例: iccid = :iccid）"
+              }
+            ]
+          }
+        ],
+        "additionalSections": [
+          {
+            "title": "セクションタイトル",
+            "content": "AI判断で必要な追加情報"
+          }
+        ]
       }
     ],
     "terminology": [
@@ -133,7 +215,7 @@ fields:
   - name: screens
     type: array
     required: false
-    description: 画面一覧（iconフィールドを含む）
+    description: 画面一覧（iconフィールド、screenOverview、screenFlow、initialDisplayItems、inputChecks、crudOperations、additionalSectionsを含む）
 
   - name: terminology
     type: array
