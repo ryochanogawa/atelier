@@ -208,18 +208,13 @@ export class GoogleSlidesAdapter implements PresentationPort {
       }
     }
 
-    // 業務フロー → シーケンス図
+    // 業務フロー → シーケンス図（1フロー=1スライドに収める）
     for (const flow of data.businessFlows) {
-      const stepsPerPage = 6;
-      const totalPages = Math.ceil(flow.steps.length / stepsPerPage);
-
-      for (let page = 0; page < totalPages; page++) {
-        const suffix = totalPages > 1 ? ` (${page + 1}/${totalPages})` : "";
-        const pageSteps = flow.steps.slice(page * stepsPerPage, (page + 1) * stepsPerPage);
+        const pageSteps = flow.steps;
 
         slides.push({
           slideType: "sequence-diagram",
-          title: `${flow.flowName}${suffix}`,
+          title: flow.flowName,
           summary: flow.flowSummary || flow.description,
           actors: flow.actors.map((name, i) => ({
             name,
@@ -239,7 +234,6 @@ export class GoogleSlidesAdapter implements PresentationPort {
               : "normal" as const,
           })),
         });
-      }
     }
 
     // 画面一覧

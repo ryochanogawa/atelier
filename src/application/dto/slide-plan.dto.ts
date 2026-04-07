@@ -75,7 +75,7 @@ const SequenceDiagramSlideSchema = z.object({
   title: z.string(),
   summary: z.string().default(""),
   actors: z.array(SequenceActorSchema).min(2).max(8),
-  steps: z.array(SequenceStepSchema).max(10),
+  steps: z.array(SequenceStepSchema),
 });
 
 const DataTableSlideSchema = z.object({

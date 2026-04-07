@@ -150,8 +150,8 @@ function createArrow(
         transform: {
           scaleX: x2 >= x1 ? 1 : -1,
           scaleY: y2 >= y1 ? 1 : -1,
-          translateX: Math.min(x1, x2),
-          translateY: Math.min(y1, y2),
+          translateX: x1,
+          translateY: y1,
           unit: "EMU",
         },
       },
@@ -177,10 +177,12 @@ export class SequenceDiagramRenderer implements SlideRenderer<SequenceDiagramSli
   render(r: SlideRequest[], d: SequenceDiagramSlide): void {
     const s = uid("seq");
     r.push({ createSlide: { objectId: s } });
-    addPageTitle(r, s, d.title);
+    // タイトルが長い場合はフォントを縮小して収める
+    const titleFontSize = d.title.length > 30 ? 18 : d.title.length > 20 ? 22 : 26;
+    addPageTitle(r, s, d.title, undefined, titleFontSize);
 
     const actors = d.actors;
-    const steps = d.steps.slice(0, 8);
+    const steps = d.steps; // 全ステップを1スライドに収める
     const n = actors.length;
     if (n === 0) return;
 
@@ -188,10 +190,10 @@ export class SequenceDiagramRenderer implements SlideRenderer<SequenceDiagramSli
     const usableW = SLIDE_W - MX * 2;
     // 各アクターに割り当てる列幅
     const colW = Math.floor(usableW / n);
-    // アクターボックス幅: 列幅の75%（最大REF値）
-    const actorW = Math.min(Math.floor(colW * 0.75), REF_ACTOR_W);
-    // ライフレーン囲み幅: 列幅の92%（最大REF値）
-    const laneW = Math.min(Math.floor(colW * 0.92), REF_LANE_W);
+    // アクターボックス幅: 列幅の88%（最大REF値）テキストが窮屈にならないよう広めに取る
+    const actorW = Math.min(Math.floor(colW * 0.88), REF_ACTOR_W);
+    // ライフレーン囲み幅: 列幅の95%（最大REF値）
+    const laneW = Math.min(Math.floor(colW * 0.95), REF_LANE_W);
     // ステップボックス幅: 列幅の83%（最大REF値）
     const stepW = Math.min(Math.floor(colW * 0.83), REF_STEP_W);
 
@@ -207,13 +209,18 @@ export class SequenceDiagramRenderer implements SlideRenderer<SequenceDiagramSli
     const actorIdx = new Map<string, number>();
     actors.forEach((a, i) => actorIdx.set(a.name, i));
 
+    // ── レーン高さをステップ数に応じて動的計算（先に計算してレーン描画に使う） ──
+    const slideBottom = SLIDE_H - 80_000; // 下部マージン
+    const availableLaneH = slideBottom - LANE_Y;
+    const dynamicLaneH = Math.min(LANE_H, availableLaneH);
+
     // ── ライフレーン囲み枠（白背景 + 黒点線DASH） ──
     for (let i = 0; i < n; i++) {
       createRect(r, s, {
         x: laneLeftX[i],
         y: LANE_Y,
         w: laneW,
-        h: LANE_H,
+        h: dynamicLaneH,
         bg: C.white,
         borderColor: BORDER_COLOR,
         borderWeight: 1,
@@ -222,7 +229,15 @@ export class SequenceDiagramRenderer implements SlideRenderer<SequenceDiagramSli
     }
 
     // ── アクターボックス（ROUND_RECTANGLE, 色付き + 白文字） ──
-    const actorFontSize = actorW < 1_200_000 ? 11 : 14;
+    // アクター名の最大文字数からベースフォントサイズを決定
+    const maxActorNameLen = Math.max(...actors.map(a => a.name.length));
+    // ボックス幅に対して文字が収まるようフォントを調整（EMU/文字 で判定）
+    const emuPerChar = Math.floor(actorW / maxActorNameLen);
+    const actorFontSize = emuPerChar < 150_000 ? 9
+      : emuPerChar < 190_000 ? 10
+      : emuPerChar < 230_000 ? 11
+      : emuPerChar < 280_000 ? 12
+      : 14;
     for (let i = 0; i < n; i++) {
       const colorKey = actors[i].color;
       const ac = ACTOR_COLORS[colorKey] || ACTOR_COLOR_MAP[colorKey] || C.blue;
@@ -238,16 +253,31 @@ export class SequenceDiagramRenderer implements SlideRenderer<SequenceDiagramSli
       styleText(r, boxId, { fontSize: actorFontSize, bold: true, color: C.white, align: "CENTER" });
     }
 
-    // ── ステップ配置 ──
-    const stepZoneTop = LANE_Y + 40_000;
-    const stepZoneBot = LANE_Y + LANE_H - 40_000;
+    // ── ステップ配置（ステップ数に応じて動的スケーリング） ──
+
+    const stepZoneTop = LANE_Y + 120_000;
+    const stepZoneBot = LANE_Y + dynamicLaneH - 30_000;
     const stepZone = stepZoneBot - stepZoneTop;
-    const stepRowH = Math.floor(stepZone / Math.max(steps.length, 1));
-    const clampedRowH = Math.min(Math.max(stepRowH, STEP_H + 60_000), 700_000);
+
+    // ステップ数に応じてボックス高さ・ギャップ・フォントサイズを動的計算
+    const stepCount = steps.length;
+    // ギャップ比率: ステップ間の矢印が十分通れるよう全体の35%をギャップに割り当て
+    const totalGapRatio = 0.35;
+    const totalBoxRatio = 1 - totalGapRatio;
+    const gapCount = Math.max(stepCount - 1, 1);
+    const gapPerStep = Math.floor((stepZone * totalGapRatio) / gapCount);
+    const baseStepH = Math.min(STEP_H, Math.floor((stepZone * totalBoxRatio) / Math.max(stepCount, 1)));
+    // フォントサイズ: ボックス高さに応じて調整
+    const baseFontSize = baseStepH < 200_000 ? 8 : baseStepH < 250_000 ? 9 : baseStepH < 300_000 ? 10 : 11;
+
+    // 実際の行高さ（ボックス＋ギャップ）
+    const rowH = baseStepH + gapPerStep;
 
     // ステップボックス情報を保存（矢印描画用）
+    const dynamicHeights: number[] = [];
     const stepBoxes: Array<{
       actorIndex: number;
+      fromActorIndex: number;
       leftX: number;
       rightX: number;
       centerX: number;
@@ -258,77 +288,76 @@ export class SequenceDiagramRenderer implements SlideRenderer<SequenceDiagramSli
     for (let i = 0; i < steps.length; i++) {
       const step = steps[i];
       const toIdx = actorIdx.get(step.toActor) ?? 0;
+      const fromIdx = actorIdx.get(step.fromActor) ?? toIdx;
       const bg = STEP_COLORS[step.style] || STEP_COLORS.normal;
 
-      // テキスト長に応じてボックス高さとフォントサイズを動的計算
-      // 1行あたり約8文字（stepW依存）、1行の高さ約160,000 EMU (11pt)
-      const charsPerLine = Math.max(Math.floor(stepW / 160_000), 6);
-      const lineCount = Math.ceil(step.label.length / charsPerLine);
-      const dynamicH = Math.max(STEP_H, lineCount * 160_000 + 60_000);
-      const fontSize = step.label.length > 20 ? 10 : 11;
+      const dynamicH = baseStepH;
+      const fontSize = baseFontSize;
+      const boxY = stepZoneTop + i * rowH;
 
-      // Y位置: ステップゾーン内に等間隔配置
-      const boxY = stepZoneTop + i * clampedRowH + Math.floor((clampedRowH - dynamicH) / 2);
-
-      // X位置: toActorのライフレーン中央にステップボックスを配置
+      // ボックスはtoActor側に配置
       const boxCX = actorCenterX[toIdx];
       const boxX = boxCX - Math.floor(stepW / 2);
-
-      // ステップボックス描画（RECTANGLE、角丸なし）
       const boxId = createRect(r, s, {
-        x: boxX,
-        y: boxY,
-        w: stepW,
-        h: dynamicH,
-        bg,
-        borderColor: BORDER_COLOR,
-        borderWeight: 1,
+        x: boxX, y: boxY, w: stepW, h: dynamicH, bg,
+        borderColor: BORDER_COLOR, borderWeight: 1,
       });
       r.push({ insertText: { objectId: boxId, text: step.label, insertionIndex: 0 } });
       styleText(r, boxId, { fontSize, bold: false, color: BORDER_COLOR, align: "CENTER" });
 
+      dynamicHeights.push(dynamicH);
       stepBoxes.push({
         actorIndex: toIdx,
-        leftX: boxX,
-        rightX: boxX + stepW,
-        centerX: boxCX,
-        topY: boxY,
-        botY: boxY + dynamicH,
+        fromActorIndex: fromIdx,
+        leftX: boxX, rightX: boxX + stepW, centerX: boxCX,
+        topY: boxY, botY: boxY + dynamicH,
       });
     }
 
-    // ── 矢印描画 ──
+    // ── 矢印描画（参考画像準拠: 縦＋横のみ） ──
     for (let i = 0; i < steps.length; i++) {
-      const step = steps[i];
-      const fromIdx = actorIdx.get(step.fromActor) ?? 0;
-      const toIdx = actorIdx.get(step.toActor) ?? 0;
       const box = stepBoxes[i];
 
-      // 横矢印: 異なるアクター間
-      if (fromIdx !== toIdx) {
-        const arrowY = box.topY + Math.floor(STEP_H / 2);
-        if (fromIdx < toIdx) {
-          // 左→右: fromアクター中心 → ステップボックス左端
-          createArrow(r, s, actorCenterX[fromIdx], arrowY, box.leftX, arrowY);
+      // ① fromActor≠toActor: fromActorレーン中央→ボックスの端へ水平矢印
+      if (box.fromActorIndex !== box.actorIndex) {
+        const fromCX = actorCenterX[box.fromActorIndex];
+        const boxMidY = Math.floor((box.topY + box.botY) / 2);
+        if (box.fromActorIndex < box.actorIndex) {
+          createArrow(r, s, fromCX, boxMidY, box.leftX, boxMidY);
         } else {
-          // 右→左: fromアクター中心 → ステップボックス右端
-          createArrow(r, s, actorCenterX[fromIdx], arrowY, box.rightX, arrowY);
+          createArrow(r, s, fromCX, boxMidY, box.rightX, boxMidY);
         }
       }
-    }
 
-    // 連続ステップ間の接続矢印（全ステップ間を矢印で繋ぐ）
-    for (let i = 0; i < stepBoxes.length - 1; i++) {
-      const curr = stepBoxes[i];
-      const next = stepBoxes[i + 1];
+      // ② 次のステップへの縦接続
+      if (i < steps.length - 1) {
+        const next = stepBoxes[i + 1];
 
-      if (curr.actorIndex === next.actorIndex) {
-        // 同一アクター: 縦矢印（ボックス下端 → 次ボックス上端）
-        createArrow(r, s, curr.centerX, curr.botY, next.centerX, next.topY);
-      } else {
-        // 異なるアクター: 斜め矢印（現ボックス下端 → 次ボックス上端へ）
-        // 参考画像のスタイル: 現ボックスの下中央から次ボックスの上中央へ
-        createArrow(r, s, curr.centerX, curr.botY, next.centerX, next.topY);
+        if (box.actorIndex === next.actorIndex) {
+          // 同じレーン: 縦矢印
+          createArrow(r, s, box.centerX, box.botY, next.centerX, next.topY);
+        } else if (box.actorIndex === next.fromActorIndex) {
+          // 現toActor = 次fromActor: ボックス下端からnextのmidYまで縦線
+          const nextMidY = Math.floor((next.topY + next.botY) / 2);
+          createLine(r, s, {
+            x1: box.centerX, y1: box.botY,
+            x2: box.centerX, y2: nextMidY,
+            color: BORDER_COLOR, weight: 1.5,
+          });
+        } else {
+          // 異なるレーン: L字型
+          const nextMidY = Math.floor((next.topY + next.botY) / 2);
+          createLine(r, s, {
+            x1: box.centerX, y1: box.botY,
+            x2: box.centerX, y2: nextMidY,
+            color: BORDER_COLOR, weight: 1.5,
+          });
+          if (box.actorIndex < next.fromActorIndex) {
+            createArrow(r, s, box.centerX, nextMidY, actorCenterX[next.fromActorIndex], nextMidY);
+          } else {
+            createArrow(r, s, box.centerX, nextMidY, actorCenterX[next.fromActorIndex], nextMidY);
+          }
+        }
       }
     }
   }

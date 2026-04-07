@@ -71,7 +71,7 @@ export function uid(prefix = "e"): string {
 
 // ── 共通ヘルパー ──
 
-export function addPageTitle(r: SlideRequest[], slideId: string, title: string, pageNumber?: number): void {
+export function addPageTitle(r: SlideRequest[], slideId: string, title: string, pageNumber?: number, titleFontSize?: number): void {
   // ピンク/モーブのヘッダーバー（参考画像準拠）
   const headerBg: RgbColor = { red: 0.93, green: 0.85, blue: 0.88 };
   const barId = uid("hb");
@@ -100,7 +100,7 @@ export function addPageTitle(r: SlideRequest[], slideId: string, title: string, 
   // タイトルテキスト（ヘッダーバー内、太字黒）
   addTextBox(r, slideId, title, {
     x: MX + 300_000, y: 80_000, w: CW - 600_000, h: 450_000,
-    fontSize: 26, bold: true, color: { red: 0.1, green: 0.1, blue: 0.1 },
+    fontSize: titleFontSize || 26, bold: true, color: { red: 0.1, green: 0.1, blue: 0.1 },
   });
 
   // カラーマーク（タイトル下の3色線：緑・橙・赤）
@@ -272,8 +272,8 @@ export function createLine(
         transform: {
           scaleX: opts.x2 >= opts.x1 ? 1 : -1,
           scaleY: opts.y2 >= opts.y1 ? 1 : -1,
-          translateX: Math.min(opts.x1, opts.x2),
-          translateY: Math.min(opts.y1, opts.y2),
+          translateX: opts.x1,
+          translateY: opts.y1,
           unit: "EMU",
         },
       },
