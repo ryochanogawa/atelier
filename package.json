@@ -21,7 +21,7 @@
     "typecheck": "tsc --noEmit",
     "docker:build": "docker build -t atelier-cli .",
     "docker:run": "docker run --rm -it atelier-cli",
-    "prepare": "npx tsc -p tsconfig.build.json && npm run copy:builtin"
+    "prepare": "node_modules/.bin/tsc -p tsconfig.build.json && npm run copy:builtin"
   },
   "dependencies": {
     "chalk": "^5.3.0",
