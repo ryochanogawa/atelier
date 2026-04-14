@@ -1,5 +1,6 @@
 export {
   StudioConfigSchema,
+  DatabaseConfigSchema,
   MediumConfigSchema,
   StrokeConfigSchema,
   type StudioConfig,

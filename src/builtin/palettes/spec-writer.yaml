@@ -23,4 +23,4 @@ policies:
 
 defaults:
   temperature: 0.3
-  max_tokens: 8192
+  max_tokens: 12288

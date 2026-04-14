@@ -153,11 +153,12 @@ describe("InteractiveSessionUseCase", () => {
 
   // ---- 4. buildContextPrompt() - 初回 vs 2回目以降 ----
   describe("buildContextPrompt()", () => {
-    it("初回は会話履歴なしのプロンプト", () => {
-      // 履歴が空 or 1件以下の場合、currentMessage をそのまま返す
+    it("初回は会話履歴なしのプロンプト（調査メソドロジー付き）", () => {
+      // 履歴が空 or 1件以下の場合、currentMessage + 調査メソドロジーを含む
       const prompt = session.buildContextPrompt("Hello");
 
-      expect(prompt).toBe("Hello");
+      expect(prompt).toContain("Hello");
+      expect(prompt).toContain("Investigation Methodology");
       expect(prompt).not.toContain("会話履歴");
     });
 
@@ -197,10 +198,10 @@ describe("InteractiveSessionUseCase", () => {
 
       expect(prompt).toContain("## Policy");
       expect(prompt).toContain("ルール1: 丁寧に回答");
-      expect(prompt).toContain("**Policy Reminder:**");
-      expect(prompt).toContain("ポリシー規範を遵守してください");
+      expect(prompt).toContain("**Reminder:**");
+      expect(prompt).toContain("蓄積された事実セクションを毎回更新してください");
 
-      // 2回目以降（履歴あり）
+      // 2回目以降（履歴あり）— 指示の呪い対策で Policy は簡略版に
       session.restoreHistory([
         { role: "user", content: "Q1", timestamp: "2026-01-01T00:00:00.000Z" },
         { role: "assistant", content: "A1", timestamp: "2026-01-01T00:00:01.000Z" },
@@ -208,8 +209,9 @@ describe("InteractiveSessionUseCase", () => {
       ]);
 
       const prompt2 = session.buildContextPrompt("Q2");
-      expect(prompt2).toContain("## Policy");
-      expect(prompt2).toContain("**Policy Reminder:**");
+      // 2回目以降は Reminder が必ず含まれる
+      expect(prompt2).toContain("**Reminder:**");
+      expect(prompt2).toContain("会話履歴");
     });
   });
 

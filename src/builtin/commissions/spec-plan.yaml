@@ -1,40 +1,100 @@
 name: spec-plan
-description: 仕様駆動開発 — 要件定義→設計→タスク生成まで（実装は含まない）
+description: |
+  仕様駆動開発 — 要件定義→設計→タスク生成まで（実装は含まない）。
+  各フェーズ間に検証ゲートを設け、前段階との整合性を自動チェックする。
+  (Addy Osmani / CURRANTE / GitHub Spec Kit の知見に基づく)
 
 strokes:
+  # ── Phase 1: 要件定義 ──
   - name: requirements
     palette: spec-writer
     instruction: spec-requirements
     contract: spec-requirements-output
     allow_edit: true
+    permission_mode: "edit"
     inputs:
       - requirements
     outputs:
       - requirements
     transitions:
       - condition: default
+        next: verify-requirements
+
+  # ── Gate 1: 要件検証 + 受け入れテスト条件生成 ──
+  # Osmani: 「AIに仕様の穴を指摘させる」
+  # CURRANTE: テスト条件を先に定義し、仕様と実装の「契約」とする
+  - name: verify-requirements
+    palette: reviewer
+    instruction: verify-requirements
+    allow_edit: true
+    permission_mode: "edit"
+    inputs:
+      - requirements
+    outputs:
+      - requirements_review
+    transitions:
+      - condition: default
         next: design
 
+  # ── Phase 2: 技術設計 ──
   - name: design
     palette: spec-writer
     instruction: spec-design
     contract: spec-design-output
     allow_edit: true
+    permission_mode: "full"
     inputs:
       - requirements
     outputs:
       - design
     transitions:
       - condition: default
+        next: verify-design
+
+  # ── Gate 2: 設計検証（クロスレビュー） ──
+  # Osmani: 「Agent Aで生成→Agent Bでレビュー」
+  # Spec Kit: 「要件Xはデザインのどこで満たされるか」マッピング検証
+  - name: verify-design
+    palette: reviewer
+    instruction: verify-design
+    allow_edit: true
+    permission_mode: "edit"
+    inputs:
+      - requirements
+      - design
+    outputs:
+      - design_review
+    transitions:
+      - condition: default
         next: tasks
 
+  # ── Phase 3: タスク生成 ──
   - name: tasks
     palette: spec-writer
     instruction: spec-tasks
     contract: spec-tasks-output
     allow_edit: true
+    permission_mode: "edit"
     inputs:
       - requirements
       - design
     outputs:
       - tasks
+    transitions:
+      - condition: default
+        next: verify-tasks
+
+  # ── Gate 3: タスク検証 + 完了条件定義 ──
+  # CURRANTE: 各タスクにテスト（完了条件）を先に定義
+  # CodeScene: テストなしで実装に入らない
+  - name: verify-tasks
+    palette: reviewer
+    instruction: verify-tasks
+    allow_edit: true
+    permission_mode: "edit"
+    inputs:
+      - requirements
+      - design
+      - tasks
+    outputs:
+      - tasks_review

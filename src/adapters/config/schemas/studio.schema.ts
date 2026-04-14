@@ -49,6 +49,18 @@ export const PipelineConfigSchema = z.object({
   slack_webhook_url: z.string().url().optional(),
 });
 
+export const DatabaseConfigSchema = z
+  .object({
+    type: z.enum(["mysql", "postgres", "sqlite"]),
+    host: z.string().default("127.0.0.1"),
+    port: z.number().int().positive().optional(),
+    name: z.string(),
+    user: z.string().optional(),
+    password: z.string().optional(),
+    env_file: z.string().optional(),
+  })
+  .optional();
+
 export const StudioConfigSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
@@ -68,8 +80,10 @@ export const StudioConfigSchema = z.object({
   worktreeDir: z.string().optional(),
   notification: NotificationConfigSchema.optional(),
   runtime: RuntimeConfigSchema.optional(),
+  database: DatabaseConfigSchema,
 });
 
 export type StudioConfig = z.infer<typeof StudioConfigSchema>;
+export type DatabaseConfig = z.infer<typeof DatabaseConfigSchema>;
 export type MediumConfig = z.infer<typeof MediumConfigSchema>;
 export type StrokeConfig = z.infer<typeof StrokeConfigSchema>;

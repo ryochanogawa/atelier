@@ -71,6 +71,16 @@
 - テーブル名の例: sim_inventory, sim_order, mnp_request, store_allocation等
 - 列名の例: iccid, sim_type, status, expiry_date, store_id等
 
+### データベーススキーマの参照
+`.atelier/studio.yaml` に `database` 設定がある場合、実際のDBに接続してテーブル構造を確認する。
+1. `.atelier/studio.yaml` を読み、`database` セクションの接続情報（type, host, port, name, user, password）を取得する
+2. `env_file` が指定されていれば、そのファイルから `${VAR}` の環境変数を解決する
+3. DB種類（type）に応じた適切なCLIコマンドでDBに接続し、要件に関連するテーブルの構造を確認する
+4. **読み取り専用**: SHOW TABLES, DESCRIBE, SELECT のみ実行可能。INSERT/UPDATE/DELETE/DROP/ALTER/CREATE/TRUNCATE等の書き込み・変更操作は絶対に実行しない
+5. 確認したテーブル名・列名・データ型をそのままCRUD操作に使用する（推測しない）
+6. **接続情報（パスワード等）は出力に絶対に含めない**
+`database` 設定がない場合は、要件から推測して記述する。
+
 ## 重要な注意事項
 - **技術用語は絶対に使わない**: API、DB、クエリ、エンドポイント、マイグレーション等の技術用語は業務用語に置き換える。「サーバー」→「システム」、「レコード」→「データ」
 - **スライド映えを意識**: 長文を避け、箇条書き・短文で書く。1つの概念は1〜2文で

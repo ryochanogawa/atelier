@@ -18,10 +18,40 @@ AI特有の問題に着目してコードをレビューしてください:
 - 既存の設計パターンとの一貫性
 - 不要なコードや過剰な実装がないか
 
+## 良いレビューと悪いレビューの例
+
+**悪い例（曖昧・根拠なし）:**
+```
+## レビュー結果
+- 判定: REJECT
+## 検出事項
+- [R1] エラーハンドリングが不適切です
+- [R2] コードの構造を見直してください
+- [R3] もう少し整理が必要です
+```
+問題点: ファイル名・行番号がない、具体的な修正案がない、「不適切」「見直し」が曖昧
+
+**良い例（具体的・実行可能）:**
+```
+## レビュー結果
+- 判定: REJECT
+## 検出事項
+- [R1][Critical] `src/services/order-service.ts:45` — catch ブロックが空。
+  OrderRepositoryのDB例外が握りつぶされ、呼び出し元に伝播しない。
+  修正案: `throw new OrderServiceError('注文保存に失敗', { cause: error })` に変更
+- [R2][Major] `src/handlers/api-handler.ts:78-92` — `formatResponse()` と
+  `buildOutput()` が同一ロジックの重複（DRY違反）。
+  修正案: `formatResponse()` に統合し、`buildOutput()` の呼び出し元を書き換え
+- [R3][Minor] `src/types/order.ts:12` — `data: any` は型安全性を損なう。
+  修正案: `data: OrderPayload` に変更（OrderPayload は同ファイル L3 で定義済み）
+## 改善提案
+- order-service.ts のエラーハンドリングを修正後、対応するユニットテストにエラーケースを追加
+```
+
 **必須出力:**
 ## レビュー結果
 - 判定: APPROVE / REJECT
 ## 検出事項
-- {各事項の詳細と分類}
+- {[finding_id][深刻度] ファイル:行番号 — 問題の説明。修正案: 具体的な修正内容}
 ## 改善提案
 - {具体的な改善案}

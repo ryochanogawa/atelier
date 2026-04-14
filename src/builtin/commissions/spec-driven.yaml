@@ -1,5 +1,5 @@
 name: spec-driven
-description: 仕様駆動開発（要件→設計→タスク→実装→テスト→レビュー）
+description: 仕様駆動開発（要件→検証→設計→検証→タスク→検証→実装→テスト→レビュー）
 
 strokes:
   - name: requirements
@@ -11,7 +11,22 @@ strokes:
       - requirements
     transitions:
       - condition: default
+        next: verify-requirements
+
+  - name: verify-requirements
+    palette: supervisor
+    instruction: verify-requirements
+    inputs:
+      - requirements
+    outputs:
+      - requirements_review
+    transitions:
+      - condition: pass
         next: design
+      - condition: warn
+        next: design
+      - condition: fail
+        next: requirements
 
   - name: design
     palette: spec-writer
@@ -24,7 +39,23 @@ strokes:
       - design
     transitions:
       - condition: default
+        next: verify-design
+
+  - name: verify-design
+    palette: supervisor
+    instruction: verify-design
+    inputs:
+      - requirements
+      - design
+    outputs:
+      - design_review
+    transitions:
+      - condition: pass
         next: tasks
+      - condition: warn
+        next: tasks
+      - condition: fail
+        next: design
 
   - name: tasks
     palette: spec-writer
@@ -38,7 +69,24 @@ strokes:
       - tasks
     transitions:
       - condition: default
+        next: verify-tasks
+
+  - name: verify-tasks
+    palette: supervisor
+    instruction: verify-tasks
+    inputs:
+      - requirements
+      - design
+      - tasks
+    outputs:
+      - tasks_review
+    transitions:
+      - condition: pass
         next: implement
+      - condition: warn
+        next: implement
+      - condition: fail
+        next: tasks
 
   - name: implement
     palette: coder

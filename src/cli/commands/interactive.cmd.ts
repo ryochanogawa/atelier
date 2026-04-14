@@ -35,7 +35,7 @@ import { IntentEnhancerService } from "../../domain/services/intent-enhancer.ser
 import { RequirementsStoreAdapter } from "../../adapters/config/requirements-store.adapter.js";
 import { resolveAtelierPath } from "../../shared/utils.js";
 import { REQUIREMENTS_DIR, COMMISSIONS_DIR } from "../../shared/constants.js";
-import { writeTextFile, readTextFile, listFiles, listDirs, ensureDir } from "../../infrastructure/fs/file-system.js";
+import { writeTextFile, readTextFile, listFiles, listDirs, ensureDir, fileExists } from "../../infrastructure/fs/file-system.js";
 import { CommissionRunUseCase } from "../../application/use-cases/run-commission.use-case.js";
 import { listBuiltinCommissions } from "../../builtin/index.js";
 import { createEventBus } from "../../infrastructure/event-bus/event-emitter.js";
@@ -43,7 +43,7 @@ import { createMediumExecutor } from "../factories/medium.factory.js";
 
 // ── helpers ──────────────────────────────────────────────
 
-/** readline で1行入力を取得する */
+/** readline で1行入力を取得する（既存互換） */
 function promptLine(promptText: string): Promise<string> {
   return new Promise((resolve) => {
     const rl = readline.createInterface({
@@ -54,6 +54,116 @@ function promptLine(promptText: string): Promise<string> {
     rl.question(promptText, (answer) => {
       rl.close();
       resolve(answer);
+    });
+  });
+}
+
+/**
+ * 複数行入力対応のプロンプト。
+ *
+ * 改行方法:
+ * - Shift+Enter: 改行（ターミナルでは ESC+Enter として送信される）
+ * - 複数行テキストの貼り付け: ブラケットペーストモードで改行を保持
+ * 送信:
+ * - Enter: 送信
+ *
+ * 方式: readline ベース + stdin フックで ESC・ペーストを検出
+ */
+function promptMultiLine(promptText: string): Promise<string> {
+  return new Promise((resolve) => {
+    const stdin = process.stdin;
+    const stdout = process.stdout;
+
+    // TTY でない場合はシンプルなフォールバック
+    if (!stdin.isTTY) {
+      const rl = readline.createInterface({ input: stdin, output: stdout, terminal: false });
+      rl.question(promptText, (answer) => { rl.close(); resolve(answer); });
+      return;
+    }
+
+    const collectedLines: string[] = [];
+    let isPasting = false;
+    let escapeDetected = false;
+    let continueNextLine = false;
+    const contPrompt = COLORS.muted("... ");
+
+    const rl = readline.createInterface({
+      input: stdin,
+      output: stdout,
+      terminal: true,
+      prompt: promptText,
+    });
+
+    // ブラケットペーストモード有効化
+    stdout.write("\x1b[?2004h");
+
+    const cleanup = () => {
+      stdout.write("\x1b[?2004l");
+      stdin.removeListener("data", onRawData);
+      rl.close();
+    };
+
+    // stdin の raw data を監視してペーストと ESC を検出
+    // readline が処理する前にフラグを立てる
+    const onRawData = (buf: Buffer) => {
+      const raw = buf.toString("utf-8");
+
+      // ブラケットペースト検出
+      if (raw.includes("\x1b[200~")) isPasting = true;
+      if (raw.includes("\x1b[201~")) isPasting = false;
+
+      // ESC+Enter (Shift+Enter) 検出: \x1b\r or \x1b\n
+      // ESC(0x1b) の直後に CR(0x0d) or LF(0x0a) があれば改行継続
+      for (let i = 0; i < buf.length; i++) {
+        if (buf[i] === 0x1b) {
+          const next = i + 1 < buf.length ? buf[i + 1] : -1;
+          // ESC + CR/LF = Shift+Enter
+          if (next === 0x0d || next === 0x0a) {
+            continueNextLine = true;
+          }
+          // ESC + [ = ANSI シーケンス（矢印キー等）→ 無視
+        }
+      }
+    };
+    stdin.on("data", onRawData);
+
+    rl.prompt();
+
+    rl.on("line", (line: string) => {
+      // ブラケットペーストのエスケープシーケンスを除去
+      const cleaned = line.replace(/\x1b\[200~/g, "").replace(/\x1b\[201~/g, "");
+
+      if (isPasting) {
+        // ペースト中 → 行を蓄積
+        collectedLines.push(cleaned);
+        rl.setPrompt(contPrompt);
+        rl.prompt();
+      } else if (continueNextLine) {
+        // Shift+Enter → 改行継続
+        continueNextLine = false;
+        collectedLines.push(cleaned);
+        rl.setPrompt(contPrompt);
+        rl.prompt();
+      } else if (collectedLines.length > 0) {
+        // 複数行入力の最終行 → 送信
+        collectedLines.push(cleaned);
+        const result = collectedLines.join("\n");
+        cleanup();
+        resolve(result);
+      } else {
+        // 通常入力（1行で送信）
+        cleanup();
+        resolve(cleaned);
+      }
+    });
+
+    rl.on("close", () => {
+      cleanup();
+      if (collectedLines.length > 0) {
+        resolve(collectedLines.join("\n"));
+      } else {
+        resolve("");
+      }
     });
   });
 }
@@ -898,21 +1008,64 @@ async function handleSpec(
     return;
   }
 
-  // Step 1: AIに会話を要約させて仕様説明を生成
-  const spinner = createSpinner("会話を要約中...").start();
+  // Step 1: findings + 構造化要約を生成（1-2文ではなくリッチな引き継ぎ）
+  const spinner = createSpinner("会話内容を構造化中...").start();
 
   let description: string;
+  let richRequirements: string;
   try {
-    const summarizePrompt = [
+    // タイトル用の短い説明を生成
+    const titlePrompt = [
       "これまでの会話内容を1〜2文の簡潔な日本語で要約してください。",
       "仕様書のタイトルや機能概要として使えるよう、装飾なしのプレーンテキストで出力してください。",
     ].join("\n");
-    description = await session.sendMessage(summarizePrompt);
+    description = await session.sendMessage(titlePrompt);
     description = description.trim();
+
+    // findings ファイルの内容を読み込む
+    const findings = await session.getFindings();
+
+    // Commission に渡すリッチな要件情報を構築
+    if (findings) {
+      // findings が蓄積されている場合、構造化要約 + findings を結合
+      const structuredPrompt = [
+        "これまでの会話内容を以下の構造で整理してください。",
+        "蓄積された事実セクションの内容も全て含めてください。",
+        "",
+        "## 機能概要",
+        "## 調査済みの事実",
+        "### 対象テーブルとカラム構造",
+        "### 入出力データ仕様（CSV等）",
+        "### 関連する既存実装（ファイルパス）",
+        "## ユーザーの決定事項",
+        "## 未決事項・確認事項",
+        "",
+        "Markdown形式で出力してください。具体的なテーブル名、カラム名、ファイルパスは省略せず全て記載してください。",
+      ].join("\n");
+      const structured = await session.sendMessage(structuredPrompt);
+      richRequirements = `${structured}\n\n---\n\n## 蓄積された発見事項\n${findings}`;
+    } else {
+      // findings がない場合は従来の要約（ただし構造化版）
+      const structuredPrompt = [
+        "これまでの会話内容を以下の構造で整理してください。",
+        "",
+        "## 機能概要",
+        "## 調査済みの事実（テーブル名、カラム、ファイルパス等の具体情報）",
+        "## ユーザーの決定事項",
+        "## 未決事項・確認事項",
+        "",
+        "Markdown形式で出力してください。具体的な情報は省略せず全て記載してください。",
+      ].join("\n");
+      richRequirements = await session.sendMessage(structuredPrompt);
+    }
+
     spinner.stop();
 
     console.log();
     printInfo(`仕様説明: ${description}`);
+    if (findings) {
+      printInfo("findings 蓄積データを含めて引き継ぎます");
+    }
     console.log();
   } catch (error) {
     spinner.fail("要約の生成に失敗しました");
@@ -948,11 +1101,11 @@ async function handleSpec(
   }
 
   // Step 3: spec-plan Commission で requirements → design → tasks を実行（実装は含まない）
-  // 仕様書生成はworktree不要 — プロジェクト直下の .atelier/specs/ に直接書き出す
+  // richRequirements（findings含む）を Canvas に渡す
   printInfo("spec-plan Commission を実行中 (requirements → design → tasks)...");
   console.log();
 
-  await executeSpecCommission(projectPath, "spec-plan", description, specDirName);
+  await executeSpecCommission(projectPath, "spec-plan", richRequirements, specDirName);
 
   printSuccess(`✓ 仕様書を生成しました: .atelier/specs/${specDirName}/`);
   console.log();
@@ -971,17 +1124,52 @@ async function handleSpecImplement(
     return;
   }
 
-  // Step 1: AIに会話を要約させて仕様説明を生成
-  const spinner = createSpinner("会話を要約中...").start();
+  // Step 1: findings + 構造化要約を生成（handleSpec と同じロジック）
+  const spinner = createSpinner("会話内容を構造化中...").start();
 
   let description: string;
+  let richRequirements: string;
   try {
-    const summarizePrompt = [
+    const titlePrompt = [
       "これまでの会話内容を1〜2文の簡潔な日本語で要約してください。",
       "仕様書のタイトルや機能概要として使えるよう、装飾なしのプレーンテキストで出力してください。",
     ].join("\n");
-    description = await session.sendMessage(summarizePrompt);
+    description = await session.sendMessage(titlePrompt);
     description = description.trim();
+
+    const findings = await session.getFindings();
+
+    if (findings) {
+      const structuredPrompt = [
+        "これまでの会話内容を以下の構造で整理してください。",
+        "蓄積された事実セクションの内容も全て含めてください。",
+        "",
+        "## 機能概要",
+        "## 調査済みの事実",
+        "### 対象テーブルとカラム構造",
+        "### 入出力データ仕様（CSV等）",
+        "### 関連する既存実装（ファイルパス）",
+        "## ユーザーの決定事項",
+        "## 未決事項・確認事項",
+        "",
+        "Markdown形式で出力してください。具体的なテーブル名、カラム名、ファイルパスは省略せず全て記載してください。",
+      ].join("\n");
+      const structured = await session.sendMessage(structuredPrompt);
+      richRequirements = `${structured}\n\n---\n\n## 蓄積された発見事項\n${findings}`;
+    } else {
+      const structuredPrompt = [
+        "これまでの会話内容を以下の構造で整理してください。",
+        "",
+        "## 機能概要",
+        "## 調査済みの事実（テーブル名、カラム、ファイルパス等の具体情報）",
+        "## ユーザーの決定事項",
+        "## 未決事項・確認事項",
+        "",
+        "Markdown形式で出力してください。具体的な情報は省略せず全て記載してください。",
+      ].join("\n");
+      richRequirements = await session.sendMessage(structuredPrompt);
+    }
+
     spinner.stop();
 
     console.log();
@@ -1024,7 +1212,7 @@ async function handleSpecImplement(
   printInfo("spec-plan Commission を実行中 (requirements → design → tasks)...");
   console.log();
 
-  await executeSpecCommission(projectPath, "spec-plan", description, specDirName);
+  await executeSpecCommission(projectPath, "spec-plan", richRequirements, specDirName);
 
   printSuccess(`✓ 仕様書を生成しました: .atelier/specs/${specDirName}/`);
   console.log();
@@ -1033,7 +1221,7 @@ async function handleSpecImplement(
   printInfo("default Commission を実行中 (plan → implement → review)...");
   console.log();
 
-  await executeCommission(projectPath, "default", description);
+  await executeCommission(projectPath, "default", richRequirements);
 
   printSuccess(`✓ 実装が完了しました`);
   console.log();
@@ -1512,8 +1700,50 @@ export function createInteractiveCommand(): Command {
       // ポリシーを読み込む
       await session.loadPolicy();
 
+      // プロジェクトコンテキスト（knowledge, 追加policy, MCPツール）を読み込む
+      // studio.yaml から MCP ツール設定を読み込み、allowed_tools に追加
+      const projectAllowedTools = await loadProjectAllowedTools(projectPath);
+      await session.loadProjectContext(projectAllowedTools);
+
+      const ctx = session.getProjectContext();
+      if (ctx.knowledgeContent) {
+        printInfo("Project Knowledge を読み込みました");
+      }
+      if (ctx.projectPolicies) {
+        printInfo("Project Policy を読み込みました");
+      }
+      if (ctx.allowedTools.length > 0) {
+        printInfo(`追加ツール: ${ctx.allowedTools.join(", ")}`);
+      }
+
       await startInteractiveLoop(session);
     });
 
   return talk;
+}
+
+/**
+ * studio.yaml の設定から talk モードで使用する追加ツールを解決する。
+ * MCP ツール名（mcp__xxx__yyy）等を返す。
+ */
+async function loadProjectAllowedTools(projectPath: string): Promise<readonly string[]> {
+  try {
+    const studioPath = path.join(projectPath, ".atelier", "studio.yaml");
+    if (!(await fileExists(studioPath))) return [];
+
+    const { parse: parseYaml } = await import("yaml");
+    const raw = await readTextFile(studioPath);
+    const config = parseYaml(raw) as Record<string, unknown>;
+
+    // studio.yaml に talk_tools が定義されていれば使う
+    // 例: talk_tools: ["mcp__xmobiledb__query", "mcp__xmobiledb__tables", "mcp__xmobiledb__describe"]
+    const talkTools = config?.["talk_tools"];
+    if (Array.isArray(talkTools)) {
+      return talkTools.filter((t): t is string => typeof t === "string");
+    }
+
+    return [];
+  } catch {
+    return [];
+  }
 }

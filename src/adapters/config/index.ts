@@ -1,7 +1,9 @@
 export type { ConfigPort } from "./types.js";
 export { YamlLoaderAdapter } from "./yaml-loader.adapter.js";
+export { resolveEnvVars } from "./env-resolver.js";
 export {
   StudioConfigSchema,
+  DatabaseConfigSchema,
   MediumConfigSchema,
   StrokeConfigSchema,
   CommissionSchema,

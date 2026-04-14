@@ -91,7 +91,12 @@ export class ClaudeCodeAdapter implements MediumPort {
     const args: string[] = ["-p", "--dangerously-skip-permissions"];
 
     // 読み取り専用ツール + WebSearch/WebFetch を許可
-    args.push("--allowedTools", "Read", "Glob", "Grep", "WebSearch", "WebFetch");
+    // 追加の allowedTools（MCPツール等）があればマージする
+    const baseTools = ["Read", "Glob", "Grep", "WebSearch", "WebFetch"];
+    const extraTools = request.allowedTools
+      ? request.allowedTools.filter((t) => !baseTools.includes(t))
+      : [];
+    args.push("--allowedTools", ...baseTools, ...extraTools);
 
     if (request.systemPrompt) {
       args.push("--system-prompt", request.systemPrompt);

@@ -69,8 +69,15 @@ export class CodexAdapter implements MediumPort {
     // `codex exec` サブコマンドで非対話実行
     const args: string[] = ["exec"];
 
+    // 非対話モードでは承認プロンプトをスキップする必要がある
+    // --full-auto = 自動承認 + workspace-write サンドボックス
+    // permissionMode に応じてサンドボックスレベルを制御
     if (request.allowEdit) {
       args.push("--full-auto");
+    } else {
+      // 読み取り専用でも自動承認は必要（対話的承認はハングする）
+      args.push("--full-auto");
+      args.push("--sandbox", "read-only");
     }
 
     if (request.extraArgs) {

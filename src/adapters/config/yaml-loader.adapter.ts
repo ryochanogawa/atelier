@@ -10,6 +10,7 @@ import { StudioConfigSchema, type StudioConfig } from "./schemas/studio.schema.j
 import { CommissionSchema } from "./schemas/commission.schema.js";
 import { PaletteSchema } from "./schemas/palette.schema.js";
 import { MarkdownLoaderAdapter, type MarkdownPaletteData } from "./markdown-loader.adapter.js";
+import { resolveEnvVars } from "./env-resolver.js";
 import type { ConfigPort } from "./types.js";
 
 const ATELIER_DIR = ".atelier";
@@ -22,7 +23,8 @@ export class YamlLoaderAdapter implements ConfigPort {
    */
   async loadStudioConfig(projectPath: string): Promise<StudioConfig> {
     const filePath = join(projectPath, ATELIER_DIR, "studio.yaml");
-    const raw = await this.readYaml(filePath);
+    const envPath = join(projectPath, ".env");
+    const raw = await this.readYaml(filePath, envPath);
     return StudioConfigSchema.parse(raw);
   }
 
@@ -93,9 +95,13 @@ export class YamlLoaderAdapter implements ConfigPort {
     return this.readYaml(filePath);
   }
 
-  private async readYaml(filePath: string): Promise<unknown> {
+  private async readYaml(
+    filePath: string,
+    envPath?: string,
+  ): Promise<unknown> {
     try {
-      const content = await readFile(filePath, "utf-8");
+      let content = await readFile(filePath, "utf-8");
+      content = resolveEnvVars(content, envPath);
       return parseYaml(content);
     } catch (error) {
       if (

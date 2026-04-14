@@ -17,3 +17,4 @@ persona: |
 
 defaults:
   temperature: 0.2
+  max_tokens: 512

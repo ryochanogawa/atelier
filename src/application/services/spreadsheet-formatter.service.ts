@@ -821,7 +821,7 @@ function buildCrudOperationTable(b: SheetBuilder, op: CrudOperation): void {
       b.headerCell(0, 1, "No", { bg: COLOR_GREEN });
       b.headerCell(2, 7, "テーブル名", { bg: COLOR_GREEN });
       b.headerCell(8, 16, "列名", { bg: COLOR_GREEN });
-      b.headerCell(17, 18, "バ", { bg: COLOR_GREEN });
+      b.headerCell(17, 18, "NULL可否", { bg: COLOR_GREEN });
       b.headerCell(19, 34, "登録する値", { bg: COLOR_GREEN });
       b.headerCell(35, LAST_COL, "検証", { bg: COLOR_GREEN });
       b.height(21);
@@ -911,7 +911,7 @@ function buildDefaultCrudTables(b: SheetBuilder): void {
   b.headerCell(0, 1, "No", { bg: COLOR_GREEN });
   b.headerCell(2, 7, "テーブル名", { bg: COLOR_GREEN });
   b.headerCell(8, 16, "列名", { bg: COLOR_GREEN });
-  b.headerCell(17, 18, "バ", { bg: COLOR_GREEN });
+  b.headerCell(17, 18, "NULL可否", { bg: COLOR_GREEN });
   b.headerCell(19, 34, "登録する値", { bg: COLOR_GREEN });
   b.headerCell(35, LAST_COL, "検証", { bg: COLOR_GREEN });
   b.height(21);

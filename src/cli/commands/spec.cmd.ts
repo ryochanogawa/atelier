@@ -43,6 +43,7 @@ import type { ConfigPort, VcsPort, LoggerPort } from "../../application/use-case
 import { createMediumExecutor } from "../factories/medium.factory.js";
 import type { StudioConfig, MediumConfig, PaletteProviderConfig } from "../../shared/types.js";
 import { simpleGit } from "simple-git";
+// DB参照はAIが直接行うため、CLI側でのスキーマ取得は不要
 
 /** Spec のフェーズ */
 type SpecPhase = "created" | "requirements" | "design" | "tasks" | "implemented";
@@ -285,6 +286,16 @@ function markTaskComplete(tasksMd: string, taskNumber: number): string {
 }
 
 // ──────────────────────────────────────────────────
+// DB スキーマ取得ヘルパー
+// ──────────────────────────────────────────────────
+
+/**
+ * studio.yaml の database 設定を読み、DB スキーマを取得して canvas 用 JSON 文字列を返す。
+ * 設定がない場合や取得失敗時は null を返す（spec 生成を止めない）。
+ */
+// DB参照はAIが .atelier/studio.yaml の database 設定を読んで直接行う
+
+// ──────────────────────────────────────────────────
 // コマンド定義
 // ──────────────────────────────────────────────────
 
@@ -384,10 +395,11 @@ export function createSpecCommand(): Command {
         const specData = await loadSpecJson(dir);
         const dirName = path.basename(dir);
 
-        await runCommission(projectPath, "spec-design", {
+        const designCanvas: Record<string, string> = {
           requirements,
           spec_dir: dirName,
-        });
+        };
+        await runCommission(projectPath, "spec-design", designCanvas);
 
         specData.phase = "design";
         await saveSpecJson(dir, specData);
@@ -648,10 +660,11 @@ export function createSpecCommand(): Command {
           spinner.text = "既存の要件定義JSONを再利用します...";
         } else {
           spinner.text = "AI が要件定義書を生成中...";
-          await runCommission(projectPath, "client-requirements", {
+          const clientCanvas: Record<string, string> = {
             requirements: description,
             spec_dir: specDirName!,
-          });
+          };
+          await runCommission(projectPath, "client-requirements", clientCanvas);
         }
 
         // JSON を読み込む
