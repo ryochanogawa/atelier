@@ -1227,6 +1227,131 @@ async function handleSpecImplement(
   console.log();
 }
 
+// ── /update-spec コマンド: 既存仕様書を壁打ち結果で更新 ──
+
+async function handleUpdateSpec(
+  session: InteractiveSessionUseCase,
+  specPathArg?: string,
+): Promise<void> {
+  const history = session.getHistory();
+  if (history.length === 0) {
+    printWarning("会話履歴がありません。先にAIと会話してください。");
+    console.log();
+    return;
+  }
+
+  const projectPath = process.cwd();
+
+  // spec ディレクトリを特定（ID or パス or 省略で最新）
+  let specDir: string;
+  const specsDir = specsDirPath(projectPath);
+  const allSpecDirs = await listDirs(specsDir);
+  const sortedSpecs = allSpecDirs
+    .map(d => ({ name: d, id: parseInt(d, 10) }))
+    .filter(d => !isNaN(d.id))
+    .sort((a, b) => b.id - a.id);
+
+  if (specPathArg) {
+    // 数字のみ → ID指定（例: /update-spec 16）
+    const asId = parseInt(specPathArg, 10);
+    if (!isNaN(asId)) {
+      const match = sortedSpecs.find(s => s.id === asId);
+      if (!match) {
+        printWarning(`Spec #${asId} が見つかりません。`);
+        console.log();
+        return;
+      }
+      specDir = path.join(specsDir, match.name);
+      printInfo(`Spec #${asId} を更新します: ${match.name}`);
+    } else {
+      // パス指定
+      const resolved = path.resolve(specPathArg);
+      try {
+        const stat = await import("node:fs/promises").then(fs => fs.stat(resolved));
+        specDir = stat.isDirectory() ? resolved : path.dirname(resolved);
+      } catch {
+        specDir = path.dirname(resolved);
+      }
+    }
+  } else {
+    // 引数なし → 最新の spec ディレクトリを自動選択
+    if (sortedSpecs.length === 0) {
+      printWarning("仕様書が見つかりません。先に /spec で生成してください。");
+      console.log();
+      return;
+    }
+    specDir = path.join(specsDir, sortedSpecs[0].name);
+    printInfo(`最新の仕様書を更新します: #${sortedSpecs[0].id} ${sortedSpecs[0].name}`);
+  }
+
+  // 既存のspec ファイルを読み込む
+  const specFiles = ["requirements.md", "design.md", "tasks.md"];
+  const existingSpecs: string[] = [];
+  for (const f of specFiles) {
+    const fp = path.join(specDir, f);
+    if (await fileExists(fp)) {
+      const content = await readTextFile(fp);
+      existingSpecs.push(`## 既存の ${f}\n\`\`\`\n${content}\n\`\`\``);
+    }
+  }
+
+  if (existingSpecs.length === 0) {
+    printWarning(`仕様書ファイルが見つかりません: ${specDir}`);
+    console.log();
+    return;
+  }
+
+  // findings を取得
+  const findings = await session.getFindings();
+
+  // AIに仕様書更新を指示（編集権限付き）
+  const updatePrompt = [
+    "以下の仕様書ファイルを、これまでの会話で確定した内容に基づいて更新してください。",
+    "",
+    "## 更新対象ファイル",
+    ...specFiles.map(f => `- ${path.join(specDir, f)}`),
+    "",
+    "## これまでの会話で蓄積された事実",
+    findings ?? "(findingsなし — 会話履歴から判断してください)",
+    "",
+    ...existingSpecs,
+    "",
+    "## 更新指示",
+    "1. 蓄積された事実（決定事項・テーブル構造・CSVマッピング等）を正確に反映してください",
+    "2. 既存の構造・フォーマットは維持し、内容のみ更新してください",
+    "3. 各ファイルを直接編集して保存してください",
+    "4. 変更箇所のサマリを報告してください",
+  ].join("\n");
+
+  const spinner = createSpinner("仕様書を更新中...").start();
+
+  try {
+    // 編集権限付きでMediumを実行
+    const medium = session["medium"] as import("../../domain/ports/medium.port.js").MediumPort;
+    const request: import("../../domain/ports/medium.port.js").MediumExecuteRequest = {
+      prompt: updatePrompt,
+      workingDirectory: projectPath,
+      allowEdit: true,
+      allowReadTools: true,
+      timeoutMs: 600_000,
+    };
+
+    const response = await medium.execute(request);
+    spinner.stop();
+
+    console.log();
+    console.log(COLORS.success("ai > ") + response.content);
+    console.log();
+
+    printSuccess(`✓ 仕様書を更新しました: ${specDir}`);
+    console.log();
+  } catch (error) {
+    spinner.fail("仕様書の更新に失敗しました");
+    printError(error instanceof Error ? error.message : String(error));
+    console.log();
+  }
+}
+
 // ── 特殊コマンドハンドラ ──────────────────────────────────
 
 async function handleSpecialCommand(
@@ -1382,6 +1507,12 @@ async function handleSpecialCommand(
       return true;
     }
 
+    case "/update-spec": {
+      const specPath = parts.slice(1).join(" ").trim() || undefined;
+      await handleUpdateSpec(session, specPath);
+      return true;
+    }
+
     case "/help": {
       printCommandHelp();
       return true;
@@ -1407,6 +1538,7 @@ function printCommandHelp(): void {
   console.log(COLORS.muted("  /implement [name]  ") + "要件定義を元に Commission を実行");
   console.log(COLORS.muted("  /spec              ") + "会話を要約して仕様書3点セット生成 (requirements/design/tasks)");
   console.log(COLORS.muted("  /spec implement    ") + "仕様書生成 + そのまま実装・テスト・レビューまで実行");
+  console.log(COLORS.muted("  /update-spec [path]") + "壁打ち結果で既存仕様書を更新（パス省略で最新spec）");
   console.log();
   console.log(COLORS.accent.bold("  セッション:"));
   console.log(COLORS.muted("  /resume            ") + "過去のセッション履歴を復元");
