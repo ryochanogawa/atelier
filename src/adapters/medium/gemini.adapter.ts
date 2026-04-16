@@ -7,6 +7,7 @@
 import { execa, type ResultPromise } from "execa";
 import type {
   MediumPort,
+  MediumCapabilities,
   MediumAvailability,
   MediumExecuteRequest,
   MediumExecuteResponse,
@@ -14,6 +15,14 @@ import type {
 
 export class GeminiAdapter implements MediumPort {
   readonly name = "gemini";
+
+  readonly capabilities: MediumCapabilities = {
+    allowedTools: false,
+    mcpTools: false,
+    systemPrompt: false,
+    networkAccess: true,
+    sandboxLevels: ["sandbox", "full"],
+  };
 
   private activeProcess: ResultPromise | null = null;
 

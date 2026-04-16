@@ -7,6 +7,7 @@
 import { execa, type ResultPromise } from "execa";
 import type {
   MediumPort,
+  MediumCapabilities,
   MediumAvailability,
   MediumExecuteRequest,
   MediumExecuteResponse,
@@ -14,6 +15,14 @@ import type {
 
 export class CodexAdapter implements MediumPort {
   readonly name = "codex";
+
+  readonly capabilities: MediumCapabilities = {
+    allowedTools: false,
+    mcpTools: false,
+    systemPrompt: false,
+    networkAccess: false,
+    sandboxLevels: ["read-only", "workspace-write"],
+  };
 
   private activeProcess: ResultPromise | null = null;
 

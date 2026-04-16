@@ -3,7 +3,7 @@
  * Mediumアダプターの登録・取得・一覧管理。
  */
 
-import type { MediumPort, MediumAvailability } from "../../domain/ports/medium.port.js";
+import type { MediumPort, MediumAvailability, MediumCapabilities } from "../../domain/ports/medium.port.js";
 import { ClaudeCodeAdapter } from "./claude-code.adapter.js";
 import { CodexAdapter } from "./codex.adapter.js";
 import { GeminiAdapter } from "./gemini.adapter.js";
@@ -40,6 +40,10 @@ export class MediumRegistry {
 
   list(): MediumPort[] {
     return [...this.adapters.values()];
+  }
+
+  getCapabilities(name: string): MediumCapabilities | undefined {
+    return this.adapters.get(name)?.capabilities;
   }
 
   async checkAll(): Promise<MediumAvailabilityReport[]> {

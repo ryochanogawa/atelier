@@ -10,6 +10,7 @@ import { MediumCheckUseCase } from "../../application/use-cases/check-medium.use
 import { resolveAtelierPath } from "../../shared/utils.js";
 import { STUDIO_CONFIG_FILE } from "../../shared/constants.js";
 import { readTextFile } from "../../infrastructure/fs/file-system.js";
+import { createDefaultRegistry } from "../../adapters/medium/medium-registry.js";
 import {
   printTable,
   printError,
@@ -97,6 +98,40 @@ export function createMediumCommand(): Command {
           r.error ?? "-",
         ]);
         printTable(["Name", "Command", "Status", "Note"], rows);
+      } catch (error) {
+        printError(
+          error instanceof Error ? error.message : String(error),
+        );
+        process.exitCode = 1;
+      }
+    });
+
+  // medium caps
+  medium
+    .command("caps")
+    .description("各 Medium の Capabilities（対応機能）を表示")
+    .action(async () => {
+      try {
+        const registry = createDefaultRegistry();
+        const adapters = registry.list();
+        const yes = "✓";
+        const no = "✗";
+
+        const rows = adapters.map((a) => {
+          const c = a.capabilities;
+          return [
+            a.name,
+            c.allowedTools ? yes : no,
+            c.mcpTools ? yes : no,
+            c.systemPrompt ? yes : no,
+            c.networkAccess ? yes : no,
+            c.sandboxLevels.join(", "),
+          ];
+        });
+        printTable(
+          ["Medium", "AllowedTools", "MCP", "SystemPrompt", "Network", "Sandbox Levels"],
+          rows,
+        );
       } catch (error) {
         printError(
           error instanceof Error ? error.message : String(error),

@@ -7,6 +7,7 @@
 import { execa, type ResultPromise } from "execa";
 import type {
   MediumPort,
+  MediumCapabilities,
   MediumAvailability,
   MediumExecuteRequest,
   MediumExecuteResponse,
@@ -18,6 +19,14 @@ import os from "node:os";
 
 export class ClaudeCodeAdapter implements MediumPort {
   readonly name = "claude-code";
+
+  readonly capabilities: MediumCapabilities = {
+    allowedTools: true,
+    mcpTools: true,
+    systemPrompt: true,
+    networkAccess: true,
+    sandboxLevels: ["readonly", "edit", "full"],
+  };
 
   private activeProcess: ResultPromise | null = null;
 
