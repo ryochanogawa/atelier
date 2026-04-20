@@ -17,6 +17,7 @@ const COLORS = {
 import path from "node:path";
 import fs from "node:fs/promises";
 import readline from "node:readline";
+import { createHash } from "node:crypto";
 import { parse as parseYaml } from "yaml";
 import { CommissionRunUseCase } from "../../application/use-cases/run-commission.use-case.js";
 import { createEventBus } from "../../infrastructure/event-bus/event-emitter.js";
@@ -285,6 +286,121 @@ function markTaskComplete(tasksMd: string, taskNumber: number): string {
   );
 }
 
+/**
+ * タスクブロックから「対象ファイル:」行を解析し、バッククォート内のパスを列挙する。
+ * パスが特定できない表記（例: "マイグレーションSQL（新規作成）"）はスキップする。
+ */
+function extractTargetFiles(taskBlock: string): string[] {
+  const files = new Set<string>();
+  for (const line of taskBlock.split("\n")) {
+    if (!/対象ファイル\s*[:：]/.test(line)) continue;
+    const matches = line.match(/`([^`]+)`/g);
+    if (!matches) continue;
+    for (const m of matches) {
+      const p = m.slice(1, -1).trim();
+      // スラッシュまたはドットを含むものだけをファイルパスとして扱う
+      if (/[./]/.test(p) && !/\s/.test(p)) {
+        files.add(p);
+      }
+    }
+  }
+  return [...files];
+}
+
+/** 変更検出用のファイル状態。status code に加えてコンテンツハッシュも保持する。 */
+interface FileState {
+  status: string;
+  /** 削除済み、または読めないファイルの場合は null */
+  hash: string | null;
+}
+
+/**
+ * `git status --porcelain -uall` でワークツリーの変更状態をスナップショットする。
+ * 各ファイルについて status code とコンテンツ sha1 を記録する。
+ *
+ * status だけの比較だと「既に " M" だったファイルが再編集された」ケースで
+ * status が変わらず差分が見えないため、hash も併せて比較する必要がある。
+ */
+async function snapshotGitStatus(projectPath: string): Promise<Map<string, FileState>> {
+  const git = simpleGit(projectPath);
+  const raw = await git.raw(["status", "--porcelain", "-uall"]);
+  const map = new Map<string, FileState>();
+  for (const line of raw.split("\n")) {
+    if (line.length < 3) continue;
+    const status = line.slice(0, 2);
+    let filePath = line.slice(3).trim();
+    // rename: "R  old -> new" → new 側を登録
+    if (filePath.includes(" -> ")) {
+      filePath = filePath.split(" -> ")[1].trim();
+    }
+    // 引用符付きパス（スペース含むファイル名）の引用符を除去
+    if (filePath.startsWith(`"`) && filePath.endsWith(`"`)) {
+      filePath = filePath.slice(1, -1);
+    }
+
+    // コンテンツハッシュを取得（削除ステータスや読めない場合は null）
+    let hash: string | null = null;
+    if (!status.includes("D")) {
+      try {
+        const absPath = path.join(projectPath, filePath);
+        const buf = await fs.readFile(absPath);
+        hash = createHash("sha1").update(buf).digest("hex");
+      } catch {
+        // 読めない場合（シンボリックリンク切れ等）は null のまま
+      }
+    }
+    map.set(filePath, { status, hash });
+  }
+  return map;
+}
+
+/**
+ * --task 指定時の事後検証: 実行前後の git status 差分から、対象ファイル以外の
+ * 変更を特定してロールバックする。
+ *
+ * - 既存ファイルの変更（modified/deleted/staged）→ `git restore` で元に戻す
+ * - 未追跡の新規ファイル → 方針(i)により警告のみ・削除しない
+ */
+async function rollbackTaskViolations(
+  projectPath: string,
+  before: Map<string, FileState>,
+  after: Map<string, FileState>,
+  allowedFiles: Set<string>,
+): Promise<{ rolledBack: string[]; warnedNew: string[] }> {
+  const git = simpleGit(projectPath);
+  const rolledBack: string[] = [];
+  const warnedNew: string[] = [];
+
+  for (const [filePath, state] of after) {
+    // status と hash の両方が一致していれば「今回の実行で変化していない」
+    const prev = before.get(filePath);
+    if (prev && prev.status === state.status && prev.hash === state.hash) continue;
+    if (allowedFiles.has(filePath)) continue; // 許可対象
+
+    const isUntracked = state.status.startsWith("??");
+    if (isUntracked) {
+      warnedNew.push(filePath);
+      continue;
+    }
+
+    // 既存ファイルの変更: staged を解除してから working tree を HEAD に戻す
+    try {
+      await git.raw(["restore", "--staged", "--", filePath]);
+    } catch {
+      // staged でないものは無視
+    }
+    try {
+      await git.raw(["restore", "--", filePath]);
+      rolledBack.push(filePath);
+    } catch (err) {
+      // 復元に失敗した場合は警告扱い
+      warnedNew.push(`${filePath} (restore failed: ${err instanceof Error ? err.message : String(err)})`);
+    }
+  }
+
+  return { rolledBack, warnedNew };
+}
+
 // ──────────────────────────────────────────────────
 // DB スキーマ取得ヘルパー
 // ──────────────────────────────────────────────────
@@ -521,6 +637,7 @@ export function createSpecCommand(): Command {
         // --task 指定時: 該当タスクを抽出
         let taskInstruction: string;
         let tasksForCanvas: string;
+        let allowedFiles: string[] = [];
 
         if (taskNumber) {
           const extracted = extractTask(fullTasks, taskNumber);
@@ -529,14 +646,32 @@ export function createSpecCommand(): Command {
             process.exitCode = 1;
             return;
           }
-          taskInstruction = `以下のタスク${taskNumber}を実装してください:\n\n${extracted}`;
+          allowedFiles = extractTargetFiles(extracted);
+          const allowedFilesBlock = allowedFiles.length > 0
+            ? allowedFiles.map((f) => `- \`${f}\``).join("\n")
+            : "(tasks.md の記述からパスを特定できませんでした。タスクブロックに明記されたファイルのみを編集してください)";
+          taskInstruction = [
+            `以下のタスク${taskNumber}**のみ**を実装してください。`,
+            ``,
+            `## 厳守事項（違反は atelier により自動ロールバックされます）`,
+            `- tasks.md の他タスク（${taskNumber}番以外）には**一切手を加えない**こと。`,
+            `- 下記「対象ファイル」以外の既存ファイルを編集した場合、atelier が実行後に \`git restore\` で自動的に変更を打ち消します。`,
+            `- design.md / requirements.md の他タスク記述は**参考情報**であり、実装対象ではありません。`,
+            `- 依存タスクが未完の場合は、勝手に他タスクを実装せず「依存タスクN未完のため中断」と報告してください。`,
+            ``,
+            `## 対象ファイル（このファイル以外は絶対に編集しない）`,
+            allowedFilesBlock,
+            ``,
+            `## 実装対象タスク`,
+            extracted,
+          ].join("\n");
           tasksForCanvas = extracted;
         } else {
           taskInstruction = `以下のタスク一覧の未完了タスク（[ ]）を全て実装してください:\n\n${fullTasks}`;
           tasksForCanvas = fullTasks;
         }
 
-        // 仕様書を canvas にセット
+        // 仕様書を canvas にセット（--task 指定時も仕様駆動のため design/requirements は全文渡す）
         const canvas: Record<string, string> = {
           task: taskInstruction,
           tasks: tasksForCanvas,
@@ -551,7 +686,36 @@ export function createSpecCommand(): Command {
           canvas.requirements = await readTextFile(reqPath);
         }
 
+        // --task 指定時: 実行前の git status をスナップショット
+        const beforeSnapshot = taskNumber ? await snapshotGitStatus(projectPath) : null;
+
         await runCommission(projectPath, "default", canvas);
+
+        // --task 指定時: 事後検証（対象外ファイルを自動ロールバック）
+        if (taskNumber && beforeSnapshot) {
+          const wasSpinning = spinner.isSpinning;
+          if (wasSpinning) spinner.stop();
+          const afterSnapshot = await snapshotGitStatus(projectPath);
+          const { rolledBack, warnedNew } = await rollbackTaskViolations(
+            projectPath,
+            beforeSnapshot,
+            afterSnapshot,
+            new Set(allowedFiles),
+          );
+          if (rolledBack.length > 0) {
+            printWarning(
+              `タスク${taskNumber}の対象外ファイル${rolledBack.length}件の変更をロールバックしました:`,
+            );
+            for (const f of rolledBack) console.log(`  - ${f}`);
+          }
+          if (warnedNew.length > 0) {
+            printWarning(
+              `タスク${taskNumber}の対象外と思われる新規ファイルが${warnedNew.length}件作成されました（削除はスキップ）:`,
+            );
+            for (const f of warnedNew) console.log(`  - ${f}`);
+          }
+          if (wasSpinning) spinner.start();
+        }
 
         // タスク完了後: tasks.md のチェックボックスを更新
         if (taskNumber) {
