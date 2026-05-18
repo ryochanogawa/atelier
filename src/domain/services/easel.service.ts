@@ -165,18 +165,38 @@ export class Easel {
           break;
         }
 
-        // 実行可能な Stroke を同時実行
-        const results = await Promise.allSettled(
-          readyStrokes.map(async (stroke): Promise<ParallelStrokeResult> => {
-            commission.advanceToStroke(stroke.name);
-            const success = await this.executeStroke(commission, stroke, runContext);
-            return {
-              strokeName: stroke.name,
-              success,
-              error: success ? undefined : `Stroke "${stroke.name}" failed`,
-            };
-          }),
+        // 実行可能な Stroke をスライディングウィンドウで同時実行
+        // MAX_PARALLEL_STROKES 個のワーカーが順次タスクを取り、1本終わったら即次を投入する
+        // バッチ方式 (2+2+1=3 波) より速く、WSL/メモリ/API rate-limit に優しい
+        const MAX_PARALLEL_STROKES = 2;
+        const results: PromiseSettledResult<ParallelStrokeResult>[] = new Array(
+          readyStrokes.length,
         );
+
+        let cursor = 0;
+        const runWorker = async (): Promise<void> => {
+          while (cursor < readyStrokes.length) {
+            const idx = cursor++;
+            const stroke = readyStrokes[idx];
+            try {
+              commission.advanceToStroke(stroke.name);
+              const success = await this.executeStroke(commission, stroke, runContext);
+              results[idx] = {
+                status: "fulfilled",
+                value: {
+                  strokeName: stroke.name,
+                  success,
+                  error: success ? undefined : `Stroke "${stroke.name}" failed`,
+                },
+              };
+            } catch (err) {
+              results[idx] = { status: "rejected", reason: err };
+            }
+          }
+        };
+
+        const workerCount = Math.min(MAX_PARALLEL_STROKES, readyStrokes.length);
+        await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
 
         // 結果を処理
         for (const result of results) {
