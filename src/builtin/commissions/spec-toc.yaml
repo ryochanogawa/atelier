@@ -1,0 +1,196 @@
+name: spec-toc
+description: |
+  toC プロダクト向け仕様駆動開発 — PR-FAQ / Outcome / 5専門家視点（並列実行）/ Synthesis / ADR / Design Doc / Tasks / Verify を一気通貫。
+  Amazon Working Backwards / Google Design Doc / Nygard ADR + Squarespace "Yes, if" / Spotify ADR / ThoughtWorks Tech Radar の知見を体現。
+  5専門家視点は depends_on による DAG 並列実行で時間短縮。
+
+strokes:
+  # ── Phase 1: ユーザー価値の起草（Working Backwards）──
+  - name: pr-faq
+    palette: pm-toc
+    instruction: pr-faq
+    allow_edit: true
+    permission_mode: "edit"
+    inputs:
+      - requirements
+    outputs:
+      - pr_faq
+    depends_on: []
+
+  # ── Phase 2: Outcome 設計（North Star + 補助指標）──
+  - name: outcome
+    palette: pm-toc
+    instruction: outcome-metrics
+    allow_edit: true
+    permission_mode: "edit"
+    inputs:
+      - requirements
+      - pr_faq
+    outputs:
+      - outcome
+    depends_on:
+      - pr-faq
+
+  # ── Phase 3: 5 専門家の一次評価（並列実行）──
+  # 各ストロークは互いに独立、Outcome のみに依存するため Promise.allSettled で同時実行される
+  - name: perspective-architect
+    palette: architect-toc
+    instruction: perspective-architect
+    allow_edit: true
+    permission_mode: "edit"
+    inputs:
+      - requirements
+      - pr_faq
+      - outcome
+    outputs:
+      - perspective_architect
+    depends_on:
+      - outcome
+
+  - name: perspective-tech-lead
+    palette: tech-lead-toc
+    instruction: perspective-tech-lead
+    allow_edit: true
+    permission_mode: "edit"
+    inputs:
+      - requirements
+      - pr_faq
+      - outcome
+    outputs:
+      - perspective_tech_lead
+    depends_on:
+      - outcome
+
+  - name: perspective-security
+    palette: security-reviewer
+    instruction: perspective-security
+    allow_edit: true
+    permission_mode: "edit"
+    inputs:
+      - requirements
+      - pr_faq
+      - outcome
+    outputs:
+      - perspective_security
+    depends_on:
+      - outcome
+
+  - name: perspective-sre
+    palette: sre-toc
+    instruction: perspective-sre
+    allow_edit: true
+    permission_mode: "edit"
+    inputs:
+      - requirements
+      - pr_faq
+      - outcome
+    outputs:
+      - perspective_sre
+    depends_on:
+      - outcome
+
+  - name: perspective-domain
+    palette: domain-expert-toc
+    instruction: perspective-domain
+    allow_edit: true
+    permission_mode: "edit"
+    inputs:
+      - requirements
+      - pr_faq
+      - outcome
+    outputs:
+      - perspective_domain
+    depends_on:
+      - outcome
+
+  # ── Phase 4: 5 視点統合（VP of Engineering 視座）──
+  # 全ての一次評価を待ってから合流
+  - name: tech-synthesis
+    palette: conductor
+    instruction: tech-synthesis
+    allow_edit: true
+    permission_mode: "edit"
+    inputs:
+      - requirements
+      - pr_faq
+      - outcome
+      - perspective_architect
+      - perspective_tech_lead
+      - perspective_security
+      - perspective_sre
+      - perspective_domain
+    outputs:
+      - tech_synthesis
+    depends_on:
+      - perspective-architect
+      - perspective-tech-lead
+      - perspective-security
+      - perspective-sre
+      - perspective-domain
+
+  # ── Phase 5: 主要判断を独立 ADR 化（Nygard + Yes, if）──
+  - name: adr-create
+    palette: architect-toc
+    instruction: adr-create
+    allow_edit: true
+    permission_mode: "edit"
+    inputs:
+      - requirements
+      - pr_faq
+      - outcome
+      - tech_synthesis
+    outputs:
+      - adr_summary
+    depends_on:
+      - tech-synthesis
+
+  # ── Phase 6: Google 式 Design Doc 作成 ──
+  - name: design-doc
+    palette: architect-toc
+    instruction: architecture-design-doc
+    allow_edit: true
+    permission_mode: "full"
+    inputs:
+      - requirements
+      - pr_faq
+      - outcome
+      - tech_synthesis
+      - adr_summary
+    outputs:
+      - design
+    depends_on:
+      - adr-create
+
+  # ── Phase 7: 実装タスク分解 ──
+  - name: tasks
+    palette: spec-writer
+    instruction: spec-tasks
+    contract: spec-tasks-output
+    allow_edit: true
+    permission_mode: "edit"
+    inputs:
+      - requirements
+      - design
+    outputs:
+      - tasks
+    depends_on:
+      - design-doc
+
+  # ── Phase 8: 横断検証（トレーサビリティ + 整合性）──
+  - name: verify-toc
+    palette: supervisor
+    instruction: verify-toc-spec
+    allow_edit: true
+    permission_mode: "edit"
+    inputs:
+      - requirements
+      - pr_faq
+      - outcome
+      - tech_synthesis
+      - adr_summary
+      - design
+      - tasks
+    outputs:
+      - verification
+    depends_on:
+      - tasks

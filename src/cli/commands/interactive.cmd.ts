@@ -1111,6 +1111,140 @@ async function handleSpec(
   console.log();
 }
 
+// ── /spec-toc コマンド: toC 向け仕様駆動開発（PR-FAQ + 5専門家 + Synthesis + ADR + Design + Tasks + Verify）─
+
+async function handleSpecToc(
+  session: InteractiveSessionUseCase,
+): Promise<void> {
+  const history = session.getHistory();
+
+  if (history.length === 0) {
+    printWarning("会話履歴がありません。先にAIと会話してください。");
+    console.log();
+    return;
+  }
+
+  // Step 1: handleSpec と同じく findings + 構造化要約を生成
+  const spinner = createSpinner("会話内容を構造化中（toC モード）...").start();
+
+  let description: string;
+  let richRequirements: string;
+  try {
+    const titlePrompt = [
+      "これまでの会話内容を1〜2文の簡潔な日本語で要約してください。",
+      "toC プロダクトの仕様書タイトルとして使えるよう、装飾なしのプレーンテキストで出力してください。",
+    ].join("\n");
+    description = await session.sendMessage(titlePrompt);
+    description = description.trim();
+
+    const findings = await session.getFindings();
+
+    if (findings) {
+      const structuredPrompt = [
+        "これまでの会話内容を以下の構造で整理してください。",
+        "蓄積された事実セクションの内容も全て含めてください。",
+        "",
+        "## プロダクト概要（顧客価値起点で）",
+        "## 想定ユーザー（時間・場所・摩擦を含む具体ペルソナ）",
+        "## 課題ループの構造（相互増幅する複数課題があれば図解）",
+        "## MVP 機能要件（変更不可制約）",
+        "## 評価軸・成功指標（プロセス評価含む）",
+        "## 既知の業界固有の罠（あれば）",
+        "## 制約（納期・スキル・予算）",
+        "## ユーザーの決定事項",
+        "## 未決事項・確認事項",
+        "",
+        "Markdown 形式で出力してください。具体情報は省略せず全て記載してください。",
+      ].join("\n");
+      const structured = await session.sendMessage(structuredPrompt);
+      richRequirements = `${structured}\n\n---\n\n## 蓄積された発見事項\n${findings}`;
+    } else {
+      const structuredPrompt = [
+        "これまでの会話内容を以下の構造で整理してください。",
+        "",
+        "## プロダクト概要（顧客価値起点で）",
+        "## 想定ユーザー（具体ペルソナ）",
+        "## 課題ループの構造",
+        "## MVP 機能要件",
+        "## 評価軸・成功指標",
+        "## 制約",
+        "## ユーザーの決定事項",
+        "## 未決事項・確認事項",
+        "",
+        "Markdown 形式で出力してください。",
+      ].join("\n");
+      richRequirements = await session.sendMessage(structuredPrompt);
+    }
+
+    spinner.stop();
+
+    console.log();
+    printInfo(`仕様説明: ${description}`);
+    if (findings) {
+      printInfo("findings 蓄積データを含めて引き継ぎます");
+    }
+    console.log();
+  } catch (error) {
+    spinner.fail("要約の生成に失敗しました");
+    printError(error instanceof Error ? error.message : String(error));
+    return;
+  }
+
+  // Step 2: spec ディレクトリを作成し spec.json を保存
+  const projectPath = process.cwd();
+  let specDirName: string;
+  let specDir: string;
+  let specId: number;
+
+  try {
+    specId = await nextSpecId(projectPath);
+    const slug = toSpecSlug(description);
+    specDirName = `${specId}-${slug}`;
+    specDir = path.join(specsDirPath(projectPath), specDirName);
+    await ensureDir(specDir);
+
+    const specData = {
+      id: specId,
+      name: slug,
+      description,
+      phase: "created",
+      mode: "toc",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await saveSpecJson(specDir, specData);
+  } catch (error) {
+    printError(`Spec ディレクトリの作成に失敗しました: ${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
+
+  // Step 3: spec-toc Commission を実行
+  // PR-FAQ → Outcome → 5専門家視点 → Synthesis → ADR → Design Doc → Tasks → Verify
+  printInfo("spec-toc Commission を実行中（toC 向け 11 strokes、所要 10-15 分）...");
+  printInfo("  Phase 1: PR-FAQ（Amazon Working Backwards）");
+  printInfo("  Phase 2: Outcome（North Star + 補助指標）");
+  printInfo("  Phase 3: 5 専門家視点（architect / tech-lead / security / sre / domain）");
+  printInfo("  Phase 4: Synthesis（VP of Engineering 統合判断）");
+  printInfo("  Phase 5: ADR（Nygard + Squarespace Yes/if）");
+  printInfo("  Phase 6: Design Doc（Google 式）");
+  printInfo("  Phase 7: Tasks（実装タスク分解）");
+  printInfo("  Phase 8: Verify（横断検証）");
+  console.log();
+
+  await executeSpecCommission(projectPath, "spec-toc", richRequirements, specDirName);
+
+  printSuccess(`✓ toC 仕様書セットを生成しました: .atelier/specs/${specDirName}/`);
+  printInfo("  - pr-faq.md");
+  printInfo("  - outcome.md");
+  printInfo("  - tech-selection/perspective-*.md (5 ファイル)");
+  printInfo("  - tech-selection/synthesis.md");
+  printInfo("  - adr/README.md + adr/NNNN-*.md");
+  printInfo("  - design.md");
+  printInfo("  - tasks.md");
+  printInfo("  - verification.md");
+  console.log();
+}
+
 // ── /spec implement コマンド: 仕様書生成 + 実装 ─────────
 
 async function handleSpecImplement(
@@ -1507,6 +1641,11 @@ async function handleSpecialCommand(
       return true;
     }
 
+    case "/spec-toc": {
+      await handleSpecToc(session);
+      return true;
+    }
+
     case "/update-spec": {
       const specPath = parts.slice(1).join(" ").trim() || undefined;
       await handleUpdateSpec(session, specPath);
@@ -1538,6 +1677,7 @@ function printCommandHelp(): void {
   console.log(COLORS.muted("  /implement [name]  ") + "要件定義を元に Commission を実行");
   console.log(COLORS.muted("  /spec              ") + "会話を要約して仕様書3点セット生成 (requirements/design/tasks)");
   console.log(COLORS.muted("  /spec implement    ") + "仕様書生成 + そのまま実装・テスト・レビューまで実行");
+  console.log(COLORS.muted("  /spec-toc          ") + "toC 向け 11 stroke 仕様生成 (PR-FAQ/5専門家/Synthesis/ADR/Design/Tasks/Verify)");
   console.log(COLORS.muted("  /update-spec [path]") + "壁打ち結果で既存仕様書を更新（パス省略で最新spec）");
   console.log();
   console.log(COLORS.accent.bold("  セッション:"));
@@ -1729,6 +1869,7 @@ async function startInteractiveLoop(
     console.log(COLORS.muted("  /go [追加指示]  - 対話を要約 → Commission 選択 → 実行"));
     console.log(COLORS.muted("  /play <タスク>  - 即座にタスク実行"));
     console.log(COLORS.muted("  /spec           - 仕様書3点セット生成"));
+    console.log(COLORS.muted("  /spec-toc       - toC 仕様生成 (PR-FAQ/5専門家/ADR/Design 等)"));
     console.log(COLORS.muted("  /resume         - 過去のセッションを復元"));
     console.log(COLORS.muted("  /exit           - 終了（アクション選択あり）"));
     console.log(COLORS.muted("─".repeat(50)));

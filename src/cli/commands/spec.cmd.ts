@@ -47,7 +47,7 @@ import { simpleGit } from "simple-git";
 // DB参照はAIが直接行うため、CLI側でのスキーマ取得は不要
 
 /** Spec のフェーズ */
-type SpecPhase = "created" | "requirements" | "design" | "tasks" | "implemented";
+type SpecPhase = "created" | "requirements" | "design" | "tasks" | "implemented" | "verified";
 
 /** spec.json の形式 */
 interface SpecJson {
@@ -472,6 +472,63 @@ export function createSpecCommand(): Command {
         printSuccess(`Spec #${id} 作成完了: .atelier/specs/${dirName}`);
       } catch (error) {
         spinner.fail("仕様書の作成に失敗しました");
+        printError(error instanceof Error ? error.message : String(error));
+        process.exitCode = 1;
+      }
+    });
+
+  // ── spec toc-create [description] ──────────────
+  // toC 向け 11 ストロークの一気通貫仕様生成
+  // (PR-FAQ + Outcome + 5専門家視点 + Synthesis + ADR + Design Doc + Tasks + Verify)
+  spec
+    .command("toc-create [description]")
+    .description("toC 向け 11 stroke 一気通貫仕様生成 (PR-FAQ + 5専門家 + ADR + Design 等)")
+    .option("--medium <name>", "使用する Medium を指定")
+    .action(async (description: string | undefined, _opts) => {
+      if (!description) {
+        description = await promptDescription();
+        if (!description.trim()) {
+          printError("説明文が入力されませんでした");
+          process.exitCode = 1;
+          return;
+        }
+      }
+      const projectPath = process.cwd();
+      const spinner = createSpinner("toC 仕様書セットを作成中（11 stroke、所要 10-15 分）...").start();
+
+      try {
+        const id = await nextSpecId(projectPath);
+        const slug = toSlug(description);
+        const dirName = `${id}-${slug}`;
+        const dir = path.join(specsDir(projectPath), dirName);
+        await ensureDir(dir);
+
+        const specData: SpecJson = {
+          id,
+          name: slug,
+          description,
+          phase: "created",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        (specData as SpecJson & { mode?: string }).mode = "toc";
+        await saveSpecJson(dir, specData);
+
+        spinner.text = "Phase 1/8: PR-FAQ を生成中...";
+
+        await runCommission(projectPath, "spec-toc", {
+          requirements: description,
+          spec_dir: dirName,
+        });
+
+        specData.phase = "verified";
+        await saveSpecJson(dir, specData);
+
+        spinner.stop();
+        printSuccess(`Spec #${id} toC 仕様書セット作成完了: .atelier/specs/${dirName}`);
+        printSuccess("  生成ファイル: pr-faq.md / outcome.md / tech-selection/ / adr/ / design.md / tasks.md / verification.md");
+      } catch (error) {
+        spinner.fail("toC 仕様書セットの作成に失敗しました");
         printError(error instanceof Error ? error.message : String(error));
         process.exitCode = 1;
       }
