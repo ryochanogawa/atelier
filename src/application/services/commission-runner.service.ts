@@ -352,6 +352,9 @@ export class CommissionRunnerService {
     // transitions で `next: null` または max_retries 超過の `fail` 判定が出たとき
     // 全体ループを止めるためのフラグ。
     let terminateRequested = false;
+    // max_retries 到達 + on_max_retries=fail のとき、最終 status を Failed に
+    // するためのフラグ（completed/failed Set だけでは表せないため別途持つ）。
+    let maxRetriesFailed = false;
 
     // 循環依存検出
     this.detectCyclicDependencies(strokes);
@@ -467,8 +470,7 @@ export class CommissionRunnerService {
         terminateRequested = true;
       } else if (loopBackResult === "fail") {
         terminateRequested = true;
-        // failed 扱いで return できるよう、何か 1 件 failed に入れる必要はない
-        // （strokesExecuted カウントと errors の累積で十分）
+        maxRetriesFailed = true;
       }
     }
 
@@ -485,7 +487,10 @@ export class CommissionRunnerService {
     }
 
     return {
-      status: failed.size > 0 ? CommissionStatus.Failed : CommissionStatus.Completed,
+      status:
+        failed.size > 0 || maxRetriesFailed
+          ? CommissionStatus.Failed
+          : CommissionStatus.Completed,
       strokesExecuted,
       errors,
     };
