@@ -32,7 +32,9 @@ const VALID_TRANSITIONS: ReadonlyMap<StrokeStatus, readonly StrokeStatus[]> =
       StrokeStatus.Retouching,
       [StrokeStatus.Executing, StrokeStatus.Failed],
     ],
-    [StrokeStatus.Completed, []],
+    // Completed からは通常終端だが、loop back（並列パスの max_retries 範囲内での
+     // 再実行）のためだけに Pending への戻りを許可する。
+    [StrokeStatus.Completed, [StrokeStatus.Pending]],
     [StrokeStatus.Failed, []],
     [StrokeStatus.Skipped, []],
   ]);

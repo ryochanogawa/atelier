@@ -525,8 +525,15 @@ export class CommissionRunnerService {
           return "terminate";
         }
 
-        // 既に完了している stroke への遷移 = loop back
+        // 既に完了している stroke への遷移 = loop back の候補
+        // ただし「back edge（自分の祖先 = transitively depends on する stroke）」
+        // である場合のみ実際に loop back とみなす。並列モードでは sequential 用に
+        // 書かれた `next: <次の sibling>` 風の transition は意味を持たないため、
+        // 兄弟や子孫への transition は無視する（誤った再実行を防ぐ）。
         if (completed.has(transition.next)) {
+          if (!this.isTransitivelyDependent(stroke.name, transition.next, strokes)) {
+            break; // 後方エッジでないので transition 自体を採用しない
+          }
           const targetCount = strokeExecCounts.get(transition.next) ?? 0;
           if (targetCount >= transition.maxRetries) {
             const onMax = transition.onMaxRetries ?? "fail";
@@ -539,7 +546,7 @@ export class CommissionRunnerService {
             });
             return onMax === "fail" ? "fail" : "terminate";
           }
-          this.resetStrokeAndDownstream(transition.next, strokes, completed);
+          this.resetStrokeAndDownstream(transition.next, strokes, completed, strokeMap);
         }
         // 最初にヒットしたトランジションのみ採用（sequential パスと同様の早抜け）
         break;
@@ -549,13 +556,16 @@ export class CommissionRunnerService {
   }
 
   /**
-   * 指定 stroke と、それに依存する全 stroke（推移的）を `completed` から削除する。
-   * loop back 後に依存解決が正しく再評価されるようにするため。
+   * 指定 stroke と、それに依存する全 stroke（推移的）を `completed` から削除し、
+   * Stroke オブジェクト自体のステートも Pending に戻す。loop back 後に依存解決が
+   * 再評価され、Pending → Composing → Executing の通常パスで再実行できるよう
+   * にするため。
    */
   private resetStrokeAndDownstream(
     target: string,
     strokes: readonly Stroke[],
     completed: Set<string>,
+    strokeMap: Map<string, Stroke>,
   ): void {
     const toReset = new Set<string>([target]);
     let changed = true;
@@ -571,7 +581,37 @@ export class CommissionRunnerService {
     }
     for (const name of toReset) {
       completed.delete(name);
+      const s = strokeMap.get(name);
+      if (s && s.status === StrokeStatus.Completed) {
+        s.transitionTo(StrokeStatus.Pending);
+      }
     }
+  }
+
+  /**
+   * `dependent` が `ancestor` に推移的に依存しているか（DAG の back edge 判定）。
+   * 並列パスで transition の loop back を正当な後方エッジに限定するために使う。
+   */
+  private isTransitivelyDependent(
+    dependent: string,
+    ancestor: string,
+    strokes: readonly Stroke[],
+  ): boolean {
+    const strokeMap = new Map(strokes.map((s) => [s.name, s]));
+    const visited = new Set<string>();
+    const queue: string[] = [dependent];
+    while (queue.length > 0) {
+      const cur = queue.shift()!;
+      if (visited.has(cur)) continue;
+      visited.add(cur);
+      const stroke = strokeMap.get(cur);
+      if (!stroke) continue;
+      for (const dep of stroke.dependsOn) {
+        if (dep === ancestor) return true;
+        queue.push(dep);
+      }
+    }
+    return false;
   }
 
   /**
