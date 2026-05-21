@@ -1613,7 +1613,51 @@ export class CommissionRunnerService {
     if (aggregateEvaluator.isAggregate(condition)) {
       return this.evaluateAggregateCondition(condition, canvas, aggregateEvaluator);
     }
+    // 等価/不等価条件: "field == value" / "field != value"
+    //   1) field を Canvas のキーとして直接ルックアップ
+    //   2) 直接ヒットしなければ Canvas の各文字列値から行頭 "field: <value>" を走査
+    //      （merge-reviews 等が rawStdout の冒頭に "verdict: approved" を出すパターンを拾う）
+    const eqMatch = condition.match(/^(\w+(?:\.\w+)*)\s*(==|!=)\s*(.+)$/);
+    if (eqMatch) {
+      const [, field, op, expectedRaw] = eqMatch;
+      const expected = expectedRaw.trim().replace(/^["']|["']$/g, "");
+      const actual = this.resolveConditionValue(field, canvas);
+      const matched = actual !== undefined && String(actual) === expected;
+      return op === "==" ? matched : !matched;
+    }
     return true;
+  }
+
+  /**
+   * 等価条件 LHS の値解決。
+   * 直接 Canvas にキーがあればその値、無ければ Canvas の全文字列値から
+   * 行頭 "field: <value>" を最初に見つけた値で解決する。
+   */
+  private resolveConditionValue(field: string, canvas: Canvas): string | undefined {
+    if (canvas.has(field)) {
+      const v = canvas.get<string>(field);
+      if (typeof v === "string") {
+        const m = v.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*$/);
+        if (m) return m[1];
+        // 値が複数行の場合は冒頭の "field: <value>" を試す（自己参照ケース）
+        const selfMatch = v.match(new RegExp(`^\\s*${field}\\s*:\\s*(\\S+)`, "m"));
+        if (selfMatch) return selfMatch[1];
+        return v;
+      }
+      return v === undefined ? undefined : String(v);
+    }
+    // Canvas は Map ベースで挿入順を保つため、最新挿入（= 直近のストローク出力）を
+    // 優先するために逆順に走査する。merge-reviews の verdict が claude/codex-review
+    // の verdict と異なる場合に、最終判定（merge-reviews）の値を確実に拾うため。
+    const fieldRegex = new RegExp(`^\\s*${field}\\s*:\\s*(\\S+)`, "m");
+    const keys = Array.from(canvas.keys()).reverse();
+    for (const key of keys) {
+      const v = canvas.get<string>(key);
+      if (typeof v !== "string") continue;
+      const m = v.match(fieldRegex);
+      if (m) return m[1];
+    }
+    return undefined;
   }
 
   /**
