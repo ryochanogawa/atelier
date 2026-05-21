@@ -346,11 +346,17 @@ export class CommissionRunnerService {
     const completed = new Set<string>();
     const failed = new Set<string>();
     const strokeMap = new Map(strokes.map((s) => [s.name, s]));
+    // 並列パスでも transitions の loop back / max_retries を尊重するため、
+    // stroke ごとの実行回数を追跡する（sequential パスの strokeExecCounts と同様）。
+    const strokeExecCounts = new Map<string, number>();
+    // transitions で `next: null` または max_retries 超過の `fail` 判定が出たとき
+    // 全体ループを止めるためのフラグ。
+    let terminateRequested = false;
 
     // 循環依存検出
     this.detectCyclicDependencies(strokes);
 
-    while (true) {
+    while (!terminateRequested) {
       // 実行可能な Stroke を取得
       const ready = strokes.filter((s) => {
         if (completed.has(s.name) || failed.has(s.name)) return false;
@@ -403,10 +409,16 @@ export class CommissionRunnerService {
         }),
       );
 
+      // この wave で成功した stroke 名（後段の transition 評価で使う）
+      const justCompleted: string[] = [];
+
       for (const result of results) {
         if (result.status === "fulfilled") {
           completed.add(result.value);
           strokesExecuted++;
+          const prevCount = strokeExecCounts.get(result.value) ?? 0;
+          strokeExecCounts.set(result.value, prevCount + 1);
+          justCompleted.push(result.value);
         } else {
           // reject の場合 — 対応する stroke を特定
           const idx = results.indexOf(result);
@@ -435,6 +447,29 @@ export class CommissionRunnerService {
           });
         }
       }
+
+      // この wave で完了した stroke の transitions を評価する。
+      // sequential パス (resolveNextStroke) と同じ条件 (==, !=, has:, status: 等) を
+      // 並列パスでも尊重する。`next: null` で終了、既完了 stroke への遷移なら
+      // 当該 stroke と下流 stroke を `completed` から外して再実行可能にする (loop back)。
+      // max_retries は stroke ごとの実行回数で抑制し、`on_max_retries` に従って fail
+      // または force_complete を選ぶ。
+      const loopBackResult = this.applyParallelTransitions(
+        justCompleted,
+        strokeMap,
+        strokes,
+        canvas,
+        completed,
+        strokeExecCounts,
+        errors,
+      );
+      if (loopBackResult === "terminate") {
+        terminateRequested = true;
+      } else if (loopBackResult === "fail") {
+        terminateRequested = true;
+        // failed 扱いで return できるよう、何か 1 件 failed に入れる必要はない
+        // （strokesExecuted カウントと errors の累積で十分）
+      }
     }
 
     // 依存先が失敗したために実行できなかった Stroke も失敗扱い
@@ -454,6 +489,89 @@ export class CommissionRunnerService {
       strokesExecuted,
       errors,
     };
+  }
+
+  /**
+   * 並列パスで wave 完了後に transitions を評価し、loop back / 終了 / max_retries
+   * を反映する。戻り値:
+   *   - "continue" : 通常通り次の wave へ
+   *   - "terminate": commission を完了として打ち切る（`next: null` ヒット時）
+   *   - "fail"     : max_retries 超過で `on_max_retries: fail` の場合
+   * 副作用として `completed` から再実行対象の stroke 名を削除する。
+   */
+  private applyParallelTransitions(
+    justCompleted: string[],
+    strokeMap: Map<string, Stroke>,
+    strokes: readonly Stroke[],
+    canvas: Canvas,
+    completed: Set<string>,
+    strokeExecCounts: Map<string, number>,
+    errors: RunErrorDto[],
+  ): "continue" | "terminate" | "fail" {
+    for (const name of justCompleted) {
+      const stroke = strokeMap.get(name);
+      if (!stroke || stroke.transitions.length === 0) continue;
+
+      for (const transition of stroke.transitions) {
+        if (!this.evaluateCondition(transition.condition, canvas)) continue;
+
+        // ヒットしたトランジション
+        if (
+          transition.next === null ||
+          transition.next === undefined ||
+          transition.next === "null" ||
+          transition.next === ""
+        ) {
+          return "terminate";
+        }
+
+        // 既に完了している stroke への遷移 = loop back
+        if (completed.has(transition.next)) {
+          const targetCount = strokeExecCounts.get(transition.next) ?? 0;
+          if (targetCount >= transition.maxRetries) {
+            const onMax = transition.onMaxRetries ?? "fail";
+            errors.push({
+              strokeName: name,
+              message:
+                `Max retries (${transition.maxRetries}) exceeded for transition ` +
+                `'${stroke.name}' -> '${transition.next}'`,
+              timestamp: new Date().toISOString(),
+            });
+            return onMax === "fail" ? "fail" : "terminate";
+          }
+          this.resetStrokeAndDownstream(transition.next, strokes, completed);
+        }
+        // 最初にヒットしたトランジションのみ採用（sequential パスと同様の早抜け）
+        break;
+      }
+    }
+    return "continue";
+  }
+
+  /**
+   * 指定 stroke と、それに依存する全 stroke（推移的）を `completed` から削除する。
+   * loop back 後に依存解決が正しく再評価されるようにするため。
+   */
+  private resetStrokeAndDownstream(
+    target: string,
+    strokes: readonly Stroke[],
+    completed: Set<string>,
+  ): void {
+    const toReset = new Set<string>([target]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const stroke of strokes) {
+        if (toReset.has(stroke.name)) continue;
+        if (stroke.dependsOn.some((dep) => toReset.has(dep))) {
+          toReset.add(stroke.name);
+          changed = true;
+        }
+      }
+    }
+    for (const name of toReset) {
+      completed.delete(name);
+    }
   }
 
   /**
