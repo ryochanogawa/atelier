@@ -749,27 +749,38 @@ export function createSpecCommand(): Command {
         await runCommission(projectPath, "default", canvas);
 
         // --task 指定時: 事後検証（対象外ファイルを自動ロールバック）
+        // tasks.md の該当タスクブロックに「対象ファイル:」行が無い場合は
+        // allowedFiles が空になる。空のままロールバックを掛けると AI が
+        // 行った全変更を巻き戻してしまうため、その場合はスキップして
+        // AI のスコープ判断に委ねる（spec-tasks 生成側のフォーマットには
+        // 「対象ファイル:」行が含まれないので、デフォルトは skip 経路）。
         if (taskNumber && beforeSnapshot) {
           const wasSpinning = spinner.isSpinning;
           if (wasSpinning) spinner.stop();
-          const afterSnapshot = await snapshotGitStatus(projectPath);
-          const { rolledBack, warnedNew } = await rollbackTaskViolations(
-            projectPath,
-            beforeSnapshot,
-            afterSnapshot,
-            new Set(allowedFiles),
-          );
-          if (rolledBack.length > 0) {
-            printWarning(
-              `タスク${taskNumber}の対象外ファイル${rolledBack.length}件の変更をロールバックしました:`,
+          if (allowedFiles.length === 0) {
+            printInfo(
+              `タスク${taskNumber}: 「対象ファイル:」行が無いためスコープガード（自動ロールバック）はスキップします。`,
             );
-            for (const f of rolledBack) console.log(`  - ${f}`);
-          }
-          if (warnedNew.length > 0) {
-            printWarning(
-              `タスク${taskNumber}の対象外と思われる新規ファイルが${warnedNew.length}件作成されました（削除はスキップ）:`,
+          } else {
+            const afterSnapshot = await snapshotGitStatus(projectPath);
+            const { rolledBack, warnedNew } = await rollbackTaskViolations(
+              projectPath,
+              beforeSnapshot,
+              afterSnapshot,
+              new Set(allowedFiles),
             );
-            for (const f of warnedNew) console.log(`  - ${f}`);
+            if (rolledBack.length > 0) {
+              printWarning(
+                `タスク${taskNumber}の対象外ファイル${rolledBack.length}件の変更をロールバックしました:`,
+              );
+              for (const f of rolledBack) console.log(`  - ${f}`);
+            }
+            if (warnedNew.length > 0) {
+              printWarning(
+                `タスク${taskNumber}の対象外と思われる新規ファイルが${warnedNew.length}件作成されました（削除はスキップ）:`,
+              );
+              for (const f of warnedNew) console.log(`  - ${f}`);
+            }
           }
           if (wasSpinning) spinner.start();
         }
